@@ -1,0 +1,17 @@
+MetaFileClass {
+ Name "{E61B4AF5DF8D9AD8}UI/layouts/Menus/Dialogs/GroupLeaderReplacementRequest.layout"
+ Configurations {
+  LayoutResourceClass PC {
+  }
+  LayoutResourceClass XBOX_ONE : PC {
+  }
+  LayoutResourceClass XBOX_SERIES : PC {
+  }
+  LayoutResourceClass PS4 : PC {
+  }
+  LayoutResourceClass PS5 : PC {
+  }
+  LayoutResourceClass HEADLESS : PC {
+  }
+ }
+}

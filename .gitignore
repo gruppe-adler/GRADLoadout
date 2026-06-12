@@ -1,0 +1,7 @@
+# Dev-only reference material — never tracked, never bundled into the Workshop addon.
+/inspiration/
+
+# Workbench / build artifacts
+*.tmp
+/build/
+/.vs/

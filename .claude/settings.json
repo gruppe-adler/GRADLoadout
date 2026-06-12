@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:/Users/nomisum/Documents/my games/ArmaReforgerWorkbench/addons/GRADLoadout\" status)",
+      "Read(//c/Users/nomisum/.claude/projects/c--Users-nomisum-Documents-my-games-ArmaReforgerWorkbench-addons-GRADLoadout/memory/**)",
+      "Bash(cat MEMORY.md)",
+      "mcp__enfusion-mcp__wb_connect",
+      "Bash(npx -y enfusion-mcp --help)",
+      "mcp__enfusion-mcp__wb_launch",
+      "mcp__enfusion-mcp__wb_state",
+      "mcp__enfusion-mcp__game_read",
+      "mcp__enfusion-mcp__asset_search",
+      "mcp__enfusion-mcp__project_read",
+      "mcp__enfusion-mcp__wb_open_resource",
+      "mcp__enfusion-mcp__wb_entity_list",
+      "mcp__enfusion-mcp__wb_entity_inspect"
+    ]
+  }
+}
