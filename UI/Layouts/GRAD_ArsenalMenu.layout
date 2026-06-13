@@ -29,7 +29,7 @@ FrameWidgetClass {
     SizeY 40
     OffsetBottom 0
    }
-   Text "#GRAD_ARSENAL_TITLE"
+   Text "ARSENAL"
    "Vertical Alignment" Center
    FontProperties FontProperties "{6698AD300F04B285}" {
    }
