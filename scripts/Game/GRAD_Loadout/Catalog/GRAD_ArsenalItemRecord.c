@@ -36,7 +36,7 @@ class GRAD_ArsenalItemRecord
 
 //------------------------------------------------------------------------------------------------
 //! Alphabetical (by display name) sorter for arsenal records, used by the item browser.
-class GRAD_ArsenalItemNameSorter : GRAD_Sorter<ref GRAD_ArsenalItemRecord>
+class GRAD_ArsenalItemNameSorter : GRAD_Sorter<GRAD_ArsenalItemRecord>
 {
 	override int Compare(GRAD_ArsenalItemRecord a, GRAD_ArsenalItemRecord b)
 	{

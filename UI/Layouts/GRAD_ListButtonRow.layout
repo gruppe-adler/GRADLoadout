@@ -1,0 +1,8 @@
+ButtonWidgetClass "{593C3A41B9D8A4C8}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+ Name "RowButton"
+ components {
+  SCR_InputButtonComponent "{622A3A0A9EED6C2F}" {
+   m_sActionName "MenuSelect"
+  }
+ }
+}

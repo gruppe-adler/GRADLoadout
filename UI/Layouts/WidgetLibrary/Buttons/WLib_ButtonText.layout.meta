@@ -1,0 +1,17 @@
+MetaFileClass {
+ Name "{75C912A1C89BE6C3}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout"
+ Configurations {
+  LayoutResourceClass PC {
+  }
+  LayoutResourceClass XBOX_ONE : PC {
+  }
+  LayoutResourceClass XBOX_SERIES : PC {
+  }
+  LayoutResourceClass PS4 : PC {
+  }
+  LayoutResourceClass PS5 : PC {
+  }
+  LayoutResourceClass HEADLESS : PC {
+  }
+ }
+}

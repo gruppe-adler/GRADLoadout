@@ -46,6 +46,17 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	// The category currently in focus (drives the item browser).
 	protected int m_iSelectedCategory = -1;
 
+	// Item browser (query/grouping over the catalog index) + the container widgets it fills.
+	protected ref GRAD_ItemBrowser m_Browser;
+	protected VerticalLayoutWidget m_wCategoryList;
+	protected VerticalLayoutWidget m_wItemList;
+
+	// Row button layout (vanilla text button + our SCR_InputButtonComponent).
+	protected const ResourceName ROW_LAYOUT = "{4BE35AEBB44455F0}UI/Layouts/GRAD_ListButtonRow.layout";
+
+	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
+	protected ref array<ref GRAD_ArsenalRowHandler> m_aRowHandlers = {};
+
 	//------------------------------------------------------------------------------------------------
 	//! Stash the context that the next OpenMenu(GRAD_ArsenalMenu) call should pick up.
 	static void SetPendingContext(GRAD_ArsenalMenuContext context)
@@ -74,12 +85,14 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		m_Context = s_PendingContext;
 		s_PendingContext = null;
 
-		if (!m_Context || !m_Context.HasTargets())
-		{
-			GRAD_Log.Error("ArsenalMenu: opened without a valid context/target; closing");
-			Close();
-			return;
-		}
+		// A context is required, but a targetless context is allowed: the browser UI still renders;
+		// only the live preview and OK-apply need a target. (Targetless is mainly a debug/render
+		// path — normal entry points always supply at least one target.)
+		if (!m_Context)
+			m_Context = new GRAD_ArsenalMenuContext();
+
+		if (!m_Context.HasTargets())
+			GRAD_Log.Warn("ArsenalMenu: opened with no target; preview + apply disabled");
 
 		Widget root = GetRootWidget();
 		if (!root)
@@ -147,22 +160,183 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Populate the left category rail. Category -> item browser wiring is fleshed out as the
-	//! browser component lands; the MVP establishes the rail and selection handler.
+	//! Build the item browser from the catalog index and populate the left category rail. Each
+	//! category is a button that, when clicked, fills the item list with that category's items.
 	protected void SetupCategoryRail(notnull Widget root)
 	{
-		// Category labels map to arsenal item-type groupings. Kept here as the single source the
-		// rail builds from; the browser filters the catalog index by the selected category.
-		// (Item-browser population is built out in P6.)
-		SelectCategory(0);
+		m_wCategoryList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_CATEGORY_LIST));
+		m_wItemList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_ITEM_LIST));
+
+		// Source the records from the singleton service's (amortized) catalog index.
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (!service || !service.GetCatalogIndex())
+		{
+			GRAD_Log.Warn("ArsenalMenu: no catalog index available; item browser empty");
+			return;
+		}
+
+		GRAD_CatalogIndex index = service.GetCatalogIndex();
+
+		// The index builds amortized over frames, so it is often not finished when the menu opens.
+		// Populate from whatever is ready now, AND subscribe to OnComplete to repopulate when the
+		// full index lands. If the build hasn't started yet, kick it off.
+		if (!index.IsComplete() && !index.IsBuilding())
+			index.BeginBuild();
+
+		if (!index.IsComplete())
+			index.GetOnComplete().Insert(OnCatalogReady);
+
+		RebuildBrowser(index);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	protected void SelectCategory(int categoryIndex)
+	//! Repopulate the rail/list once the catalog index finishes building.
+	protected void OnCatalogReady()
+	{
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (!service || !service.GetCatalogIndex())
+			return;
+
+		service.GetCatalogIndex().GetOnComplete().Remove(OnCatalogReady);
+		RebuildBrowser(service.GetCatalogIndex());
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! (Re)build the item browser from the current index contents and refill the rail.
+	protected void RebuildBrowser(notnull GRAD_CatalogIndex index)
+	{
+		m_Browser = new GRAD_ItemBrowser(index.GetRecords());
+
+		// Optionally scope to the target's faction so the rail shows relevant items first.
+		ChimeraCharacter primaryChar = ChimeraCharacter.Cast(m_Context.GetPrimaryTarget());
+		if (primaryChar)
+		{
+			SCR_ChimeraCharacter scrChar = SCR_ChimeraCharacter.Cast(primaryChar);
+			if (scrChar)
+				m_Browser.SetFactionKey(scrChar.GetFactionKey());
+		}
+
+		GRAD_Log.Info(string.Format("ArsenalMenu: browser has %1 records, %2 categories",
+			index.GetRecordCount(), m_Browser.GetCategoryCount()));
+
+		PopulateCategories();
+
+		if (m_Browser.GetCategoryCount() > 0)
+			SelectCategoryByIndex(0);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Create one row button per category in the rail.
+	protected void PopulateCategories()
+	{
+		if (!m_wCategoryList || !m_Browser)
+			return;
+
+		ClearChildren(m_wCategoryList);
+
+		array<int> types = m_Browser.GetCategoryTypes();
+		for (int i = 0, count = types.Count(); i < count; i++)
+		{
+			int categoryType = types[i];
+			Widget row = CreateRow(m_wCategoryList, GRAD_ArsenalCategoryLabels.LabelFor(categoryType));
+			if (!row)
+				continue;
+
+			GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+			handler.m_iCategoryIndex = i;
+			handler.m_bIsCategory = true;
+			m_aRowHandlers.Insert(handler);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Select a category by rail index and refill the item list.
+	void SelectCategoryByIndex(int categoryIndex)
 	{
 		m_iSelectedCategory = categoryIndex;
-		// P6: filter GRAD_ArsenalService.GetInstance().GetCatalogIndex() by this category and fill
-		// the item list widget.
+		if (m_Browser)
+			m_Browser.SetCategoryByIndex(categoryIndex);
+
+		PopulateItems();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Fill the item list with the current category's filtered records.
+	protected void PopulateItems()
+	{
+		if (!m_wItemList || !m_Browser)
+			return;
+
+		ClearChildren(m_wItemList);
+
+		array<ref GRAD_ArsenalItemRecord> records = {};
+		m_Browser.GetFiltered(records);
+
+		foreach (GRAD_ArsenalItemRecord rec : records)
+		{
+			if (!rec)
+				continue;
+
+			Widget row = CreateRow(m_wItemList, rec.m_sDisplayName);
+			if (!row)
+				continue;
+
+			GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+			handler.m_Record = rec;
+			handler.m_bIsCategory = false;
+			m_aRowHandlers.Insert(handler);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Called by a row handler when an ITEM row is clicked: add that item to the preview character.
+	void OnItemRowClicked(GRAD_ArsenalItemRecord record)
+	{
+		if (!record || !m_PreviewCharacter)
+			return;
+
+		// Add the chosen item to the preview locally. The engine auto-refreshes the preview render.
+		GRAD_LoadoutEntry entry = new GRAD_LoadoutEntry(record.m_sPrefab, -1, string.Empty, 1);
+		GRAD_LoadoutData single = new GRAD_LoadoutData();
+		single.m_Root.AddChild(entry);
+
+		// Apply as a local additive operation (force=false so we don't strip existing kit).
+		array<IEntity> created = {};
+		GRAD_LoadoutApply.Apply(m_PreviewCharacter, single, true, false, created);
+		foreach (IEntity e : created)
+			m_aPreviewCreated.Insert(e);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Create a labelled row button under parent from the row layout. Returns the row widget.
+	protected Widget CreateRow(notnull Widget parent, string label)
+	{
+		WorkspaceWidget workspace = GetGame().GetWorkspace();
+		if (!workspace)
+			return null;
+
+		Widget row = workspace.CreateWidgets(ROW_LAYOUT, parent);
+		if (!row)
+			return null;
+
+		SCR_ButtonTextComponent text = SCR_ButtonTextComponent.FindButtonTextComponent(row);
+		if (text)
+			text.SetText(label);
+
+		return row;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Remove all children of a layout widget (and drop the row handlers tied to them).
+	protected void ClearChildren(notnull Widget parent)
+	{
+		Widget child = parent.GetChildren();
+		while (child)
+		{
+			Widget next = child.GetSibling();
+			child.RemoveFromHierarchy();
+			child = next;
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -183,10 +357,10 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			return;
 		}
 
-		GRAD_LoadoutManagerComponent mgr = GRAD_LoadoutManagerComponent.GetLocal();
+		SCR_PlayerController mgr = SCR_PlayerController.GradGetLocal();
 		if (!mgr)
 		{
-			GRAD_Log.Error("ArsenalMenu: no local loadout manager to apply through");
+			GRAD_Log.Error("ArsenalMenu: no local controller to apply through");
 			Close();
 			return;
 		}
@@ -195,9 +369,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		array<IEntity> targets = m_Context.GetTargets();
 		foreach (IEntity target : targets)
 		{
-			RplId rplId = GRAD_LoadoutManagerComponent.GetEntityRplId(target);
+			RplId rplId = SCR_PlayerController.GradGetEntityRplId(target);
 			if (rplId.IsValid())
-				mgr.ApplyLoadout(rplId, result);
+				mgr.GradApplyLoadout(rplId, result);
 			else
 				GRAD_Log.Warn(string.Format("ArsenalMenu: target %1 has no RplId; skipped", GRAD_InventoryLib.GetEntityShortName(target)));
 		}
@@ -226,6 +400,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			m_PreviewCameraHelper.Destroy();
 			m_PreviewCameraHelper = null;
 		}
+
+		// Stop listening for a catalog build that may outlive this menu.
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (service && service.GetCatalogIndex())
+			service.GetCatalogIndex().GetOnComplete().Remove(OnCatalogReady);
 
 		GRAD_LoadoutApply.CleanupCreated(m_aPreviewCreated);
 
@@ -286,5 +465,85 @@ class GRAD_ArsenalMenuContext
 	bool HasTargets()
 	{
 		return !m_aTargets.IsEmpty();
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! One clickable rail/list row. Bridges a row button's activation to the menu, carrying the
+//! per-row context (which category, or which item) the menu needs to react.
+class GRAD_ArsenalRowHandler
+{
+	protected GRAD_ArsenalMenu m_Menu;
+
+	int m_iCategoryIndex = -1;			//!< meaningful when m_bIsCategory
+	ref GRAD_ArsenalItemRecord m_Record;	//!< meaningful when !m_bIsCategory
+	bool m_bIsCategory;
+
+	//------------------------------------------------------------------------------------------------
+	void GRAD_ArsenalRowHandler(GRAD_ArsenalMenu menu, notnull Widget rowWidget)
+	{
+		m_Menu = menu;
+
+		SCR_InputButtonComponent button = SCR_InputButtonComponent.FindComponent(rowWidget);
+		if (button)
+			button.m_OnActivated.Insert(OnActivated);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void OnActivated()
+	{
+		if (!m_Menu)
+			return;
+
+		if (m_bIsCategory)
+			m_Menu.SelectCategoryByIndex(m_iCategoryIndex);
+		else
+			m_Menu.OnItemRowClicked(m_Record);
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! Maps an arsenal item-type value (a SCR_EArsenalItemType BITFLAG) to a display label for the
+//! category rail.
+//!
+//! SCR_EArsenalItemType is a power-of-two bitflag enum (values seen live: 2,4,8,16,...,4194304).
+//! We map each known bit to a readable English name here so the rail shows words, not numbers.
+//! These names are best-effort and easily edited; for full localization, replace the returned
+//! strings with `#`-prefixed stringtable keys (see docs/WORKBENCH_TASKS.md).
+//!
+//! TODO (verify in-game): confirm each bit -> name by inspecting which prefabs land in each
+//! category. Order below follows the standard Reforger arsenal type ordering; adjust as needed.
+class GRAD_ArsenalCategoryLabels
+{
+	//------------------------------------------------------------------------------------------------
+	static string LabelFor(int arsenalType)
+	{
+		switch (arsenalType)
+		{
+			case 2:       return "Rifles";
+			case 4:       return "Launchers";
+			case 8:       return "Pistols";
+			case 16:      return "Submachine Guns";
+			case 32:      return "Machine Guns";
+			case 64:      return "Grenades";
+			case 128:     return "Explosives";
+			case 256:     return "Magazines";
+			case 512:     return "Rockets";
+			case 1024:    return "Optics";
+			case 2048:    return "Muzzles";
+			case 4096:    return "Underbarrel";
+			case 8192:    return "Bayonets";
+			case 16384:   return "Headgear";
+			case 32768:   return "Uniforms";
+			case 65536:   return "Vests";
+			case 131072:  return "Backpacks";
+			case 262144:  return "Medical";
+			case 524288:  return "Equipment";
+			case 1048576: return "Radios";
+			case 2097152: return "Consumables";
+			case 4194304: return "Misc";
+		}
+
+		return string.Format("Type %1", arsenalType);
 	}
 }

@@ -1,0 +1,61 @@
+ButtonWidgetClass "{69995B1FA56655C8}" {
+ Name "Button"
+ Clipping False
+ components {
+  SCR_ButtonTextComponent "{5548F0143AE99095}" {
+   m_bCanBeToggled 0
+   m_BackgroundDefault 1 1 1 0.098
+   m_BackgroundHovered 1 1 1 0.4
+   m_BackgroundSelected 0.761 0.386 0.08 1
+   m_BackgroundSelectedHovered 0.896 0.539 0.184 1
+   m_BackgroundClicked 0.761 0.386 0.08 1
+   m_sText "Button"
+  }
+ }
+ style blank
+ {
+  SizeLayoutWidgetClass "{69995B1FA56655C9}" {
+   Name "SizeLayout"
+   Slot ButtonWidgetSlot "{5548E6E7E6AEDDC1}" {
+    HorizontalAlign 3
+    VerticalAlign 3
+   }
+   {
+    OverlayWidgetClass "{69995B1FA56655B5}" {
+     Name "Overlay"
+     Slot ButtonWidgetSlot "{5548E6E7F213FB11}" {
+      HorizontalAlign 3
+      VerticalAlign 3
+      Padding 2 2 2 2
+     }
+     {
+      ImageWidgetClass "{69995B1FA56655B2}" {
+       Name "Background"
+       Slot OverlayWidgetSlot "{5548E6E7DF4EE313}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+       }
+      }
+      PanelWidgetClass "{69995B1FA56655B3}" {
+       Name "Border"
+       Slot OverlayWidgetSlot "{55367D8E4A13554A}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+        Padding -2 -2 -2 -2
+       }
+       Clipping False
+       Color 0.761 0.386 0.078 1
+       style outline_2px
+      }
+      TextWidgetClass "{69995B1FA566A754}" : "{E64DA8292CD7DBDD}UI/layouts/WidgetLibrary/TextWidgets/Text_InteractiveSmall.layout" {
+       Name "Text"
+       Slot OverlayWidgetSlot "{55708DE55528756B}" {
+       }
+       "Min Font Size" 20
+      }
+     }
+    }
+   }
+  }
+ }
+}

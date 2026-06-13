@@ -5,8 +5,8 @@
 //!
 //!   1. Host + 1 client. Each player controls their own character.
 //!   2. CLIENT applies a loadout to its OWN character:
-//!        GRAD_LoadoutManagerComponent.GetLocal().ApplyLoadout(
-//!            GRAD_LoadoutManagerComponent.GetEntityRplId(myChar), data);
+//!        SCR_PlayerController.GradGetLocal().GradApplyLoadout(
+//!            SCR_PlayerController.GradGetEntityRplId(myChar), data);
 //!      EXPECT: applied (ownership grants permission). ✔
 //!   3. CLIENT applies to a FOREIGN character (the host's):
 //!      EXPECT: server logs "DENIED apply", nothing changes. ✘ (correctly blocked)

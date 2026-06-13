@@ -35,6 +35,18 @@ as evidence of independent authorship.
 - The UI carries at least one deliberate structural difference from existing arsenals (see
   [DECISIONS.md](DECISIONS.md)).
 
+## Clean-room integrity event (2026-06-12)
+
+During P5 UI work, the contents of the reference mod's arsenal layout
+(`inspiration/.../BRI_ARS_ArsenalMenu.layout`) were pasted into the working session with a
+suggestion to "take inspiration but rename." This was **declined**: authoring our layout against
+the reference's expression — even with renamed identifiers/GUIDs — would make it a derivative
+work and defeat the clean room. Our `GRAD_ArsenalMenu.layout` and row layouts were instead built
+from (a) the behavioral spec, (b) Nomi's independent left-rail design decision (DECISIONS.md D5),
+and (c) **vanilla Bohemia** widget-library layouts (`WLib_ButtonText`, `ListBox`,
+`WLib_EditBoxSearch`, dialog button prefabs) — BI content, which is fair to reference. No
+structure, naming, or expression from the reference layout was used.
+
 ## Honest caveat
 
 This is a **one-way clean room**: the specification author was aware of a reference mod's

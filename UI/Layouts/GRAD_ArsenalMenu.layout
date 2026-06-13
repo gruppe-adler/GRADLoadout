@@ -1,72 +1,135 @@
-FrameWidgetClass "{59411D0429B61DE3}" {
+FrameWidgetClass {
  Name "GRAD_ArsenalMenuRoot"
  {
-  VerticalLayoutWidgetClass "{557D11FDCA06213E}" {
-   Name "RootColumn"
-   Slot LayoutSlot "{41FF9D0C43CD963D}" {
+  ImageWidgetClass "{5C5B0512D8CF41A3}" {
+   Name "Background"
+   Slot FrameWidgetSlot "{34CED9596258C8AE}" {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+   }
+   Color 0.02 0.02 0.03 0.88
+  }
+  TextWidgetClass "{23B7B4E324FF39F3}" {
+   Name "Title"
+   Slot FrameWidgetSlot "{10895B2F4F1AFBF8}" {
+    Anchor 0 0 1 0
+    PositionX 40
+    OffsetLeft 40
+    PositionY 24
+    OffsetTop 24
+    SizeX -80
+    OffsetRight 0
+    SizeY 40
+    OffsetBottom 0
+   }
+   Text "#GRAD_ARSENAL_TITLE"
+   "Vertical Alignment" Center
+   FontProperties FontProperties "{6698AD300F04B285}" {
+   }
+  }
+  PanelWidgetClass "{2512F4AB6CC303A8}" {
+   Name "CategoryRail"
+   Slot FrameWidgetSlot "{441885F0C574F5D2}" {
+    Anchor 0 0 0 1
+    PositionX 40
+    OffsetLeft 40
+    PositionY 80
+    OffsetTop 80
+    SizeX 250
+    OffsetRight -290
+    SizeY -160
+    OffsetBottom 0
    }
    {
-    RichTextWidgetClass "{23B7B4E324FF39F3}" {
-     Name "Title"
-     Text "#GRAD_ARSENAL_TITLE"
-     Slot VerticalLayoutSlot "{10895B2F4F1AFBF8}" {
-      Padding 0 0 0 16
+    VerticalLayoutWidgetClass "{03C30940F00C5104}" {
+     Name "CategoryList"
+     Slot FrameWidgetSlot "{03C30940F00C5105}" {
+      Anchor 0 0 1 1
+      PositionX 0
+      OffsetLeft 0
+      PositionY 0
+      OffsetTop 0
+      SizeX 0
+      OffsetRight 0
+      SizeY 0
+      OffsetBottom 0
      }
     }
-    HorizontalLayoutWidgetClass "{326F7B8E4BBA55EB}" {
-     Name "Body"
-     Slot VerticalLayoutSlot "{4DD1DA06F4979340}" {
-      VerticalAlign "Stretch"
-     }
-     {
-      ScrollLayoutWidgetClass "{2512F4AB6CC303A8}" {
-       Name "CategoryRail"
-       Slot HorizontalLayoutSlot "{441885F0C574F5D2}" {
-        Padding 0 0 16 0
-       }
-       {
-        VerticalLayoutWidgetClass "{03C30940F00C5104}" {
-         Name "CategoryList"
-        }
-       }
-      }
-      ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
-       Name "PreviewCharacter"
-       Slot HorizontalLayoutSlot "{392217F6C77B2E86}" {
-        Padding 0 0 16 0
-        HorizontalAlign "Stretch"
-       }
-      }
-      ScrollLayoutWidgetClass "{41F27C3A98AEAEF0}" {
-       Name "ItemListScroll"
-       Slot HorizontalLayoutSlot "{3E6D7791BD5E4247}" {
-       }
-       {
-        VerticalLayoutWidgetClass "{00F6B11784CDB106}" {
-         Name "ItemList"
-        }
-       }
-      }
+   }
+  }
+  ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
+   Name "PreviewCharacter"
+   Slot FrameWidgetSlot "{392217F6C77B2E86}" {
+    Anchor 0 0 1 1
+    PositionX 296
+    OffsetLeft 296
+    PositionY 80
+    OffsetTop 80
+    SizeX -696
+    OffsetRight 0
+    SizeY -160
+    OffsetBottom 0
+   }
+  }
+  PanelWidgetClass "{41F27C3A98AEAEF0}" {
+   Name "ItemListScroll"
+   Slot FrameWidgetSlot "{3E6D7791BD5E4247}" {
+    Anchor 1 0 1 1
+    PositionX -400
+    OffsetLeft -400
+    PositionY 80
+    OffsetTop 80
+    SizeX 360
+    OffsetRight -40
+    SizeY -160
+    OffsetBottom 0
+   }
+   {
+    VerticalLayoutWidgetClass "{00F6B11784CDB106}" {
+     Name "ItemList"
+     Slot FrameWidgetSlot "{00F6B11784CDB107}" {
+      Anchor 0 0 1 1
+      PositionX 0
+      OffsetLeft 0
+      PositionY 0
+      OffsetTop 0
+      SizeX 0
+      OffsetRight 0
+      SizeY 0
+      OffsetBottom 0
      }
     }
-    HorizontalLayoutWidgetClass "{6334089205A39504}" {
-     Name "ButtonBar"
-     HorizontalAlign 2
-     Slot VerticalLayoutSlot "{6334089205A39505}" {
-      Padding 0 16 0 0
+   }
+  }
+  HorizontalLayoutWidgetClass "{6334089205A39504}" {
+   Name "ButtonBar"
+   Slot FrameWidgetSlot "{6334089205A39505}" {
+    Anchor 1 1 1 1
+    PositionX -360
+    OffsetLeft -360
+    PositionY -64
+    OffsetTop -64
+    SizeX 320
+    OffsetRight -40
+    SizeY 48
+    OffsetBottom -16
+   }
+   {
+    ButtonWidgetClass "{6334089205A39508}" : "{0114A06AD44D49BD}UI/layouts/WidgetLibrary/Buttons/DialogButtonCancel.layout" {
+     Name "ButtonCancel"
+     Slot LayoutSlot "{6334089205A39509}" {
      }
-     {
-      ButtonWidgetClass "{6334089205A39508}" : "{0114A06AD44D49BD}UI/layouts/WidgetLibrary/Buttons/DialogButtonCancel.layout" {
-       Name "ButtonCancel"
-       Slot HorizontalLayoutSlot "{6334089205A39509}" {
-        Padding 0 0 16 0
-       }
-      }
-      ButtonWidgetClass "{6334089205A3950B}" : "{51898FF369FE5EB8}UI/layouts/WidgetLibrary/Buttons/DialogButtonConfirm.layout" {
-       Name "ButtonOK"
-       Slot HorizontalLayoutSlot "{6334089205A3950C}" {
-       }
-      }
+    }
+    ButtonWidgetClass "{6334089205A3950B}" : "{51898FF369FE5EB8}UI/layouts/WidgetLibrary/Buttons/DialogButtonConfirm.layout" {
+     Name "ButtonOK"
+     Slot LayoutSlot "{6334089205A3950C}" {
      }
     }
    }

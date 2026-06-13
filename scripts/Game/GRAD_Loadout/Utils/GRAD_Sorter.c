@@ -6,7 +6,7 @@
 //! sort is simple, stable, and allocation-free. It is not intended for large datasets.
 //!
 //! Usage:
-//!   class GRAD_NameSorter : GRAD_Sorter<ref GRAD_ItemRecord>
+//!   class GRAD_NameSorter : GRAD_Sorter<GRAD_ItemRecord>   // plain type, not `ref T`
 //!   {
 //!       override int Compare(GRAD_ItemRecord a, GRAD_ItemRecord b)
 //!       { return a.GetName() < b.GetName() ? -1 : (a.GetName() > b.GetName() ? 1 : 0); }
@@ -25,7 +25,9 @@ class GRAD_Sorter<Class T>
 
 	//------------------------------------------------------------------------------------------------
 	//! Stable in-place ascending sort according to Compare().
-	void Sort(array<T> items)
+	//! Operates on array<ref T> so it works with the script-managed reference arrays the arsenal
+	//! uses (the type parameter T is the plain class type, not `ref T`).
+	void Sort(array<ref T> items)
 	{
 		if (!items)
 			return;

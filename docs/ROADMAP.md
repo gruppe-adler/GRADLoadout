@@ -10,9 +10,9 @@ run, short changelog note.
 | **P2** | Data model: capture → JSON → apply round-trip on a local character (no UI/network) | Compiles clean — pending in-game round-trip run |
 | **P3** | Replication: controller-component RPCs + permission gate; MP peer test | Compiles + component wired onto controller prefab (verified attached at idx 3) — pending MP peer permission test |
 | **P4** | Catalog index + singleton service entity; amortized build, faction filtering, slot-allowlist config | Compiles clean — pending in-world index build verification + service entity placement |
-| **P5** | Menu MVP: preview character + camera, equipment + item browser panels, OK/Cancel apply | Menu class compiles clean (PlayMode OK) — pending .layout + menu-registration .conf, then open-and-edit test |
-| **P6** | Full UI: attachments panel, save/load/delete, filter/search, gamepad nav, localization | Pending |
-| **P7** | Entry points: arsenal box prefab actions; GM context actions incl. copy/paste + multi-select | Pending |
+| **P5** | Menu MVP: preview character + camera, equipment + item browser panels, OK/Cancel apply | **WORKING LIVE** — menu opens in-game (menu-config override live), full-screen layout renders, catalog builds (492 items/22 cats), category rail + item list both populate, OK/Cancel render. Remaining polish: confirm category-click refilter, preview character (opens targetless in debug), stringtable for labels |
+| **P6** | Full UI: attachments panel, save/load/delete, filter/search, gamepad nav, localization | Persistence store (`GRAD_LoadoutStore`: save/load/delete/list under $profile:) authored. Pending: browser population, attachments panel, gamepad, stringtable (Workbench) |
+| **P7** | Entry points: arsenal box prefab actions; GM context actions incl. copy/paste + multi-select | Script side authored: `GRAD_OpenArsenalAction` + `GRAD_LoadPreviousAction` (box user actions), `GRAD_GMOpenArsenalAction`/`CopyLoadoutAction`/`PasteLoadoutAction` (GM context actions, multi-select). Pending: arsenal box prefab + action registration (Workbench) |
 | **P8** | Hardening: death-while-open, missing prefabs, RPC size limits, dedicated-server smoke, perf pass | Pending |
 
 ## Verification posture
@@ -39,6 +39,16 @@ These were authored against the verified script API but not yet compiled/run liv
 - _P1_ — Utils module authored: `GRAD_Log`, `GRAD_CommonUtils`, `GRAD_Sorter`,
   `GRAD_InventoryLib` (+ `GRAD_SlotRef`), and `GRAD_UtilsTest` probe. All engine APIs verified
   via `api_search`. Pending live compile/test.
+- _P6/P7 (script side)_ — authored & compiling (PlayMode entered clean): `GRAD_LoadoutStore`
+  (save/load/delete/list named loadouts under `$profile:GRAD_Loadout/loadouts/`), arsenal-box
+  user actions (`GRAD_OpenArsenalAction`, `GRAD_LoadPreviousAction`), and GM editor context
+  actions (`GRAD_GMOpenArsenalAction`, `GRAD_GMCopyLoadoutAction`, `GRAD_GMPasteLoadoutAction`,
+  multi-select + clipboard via the service). Remaining P5/P6/P7 work is Workbench-bound artifacts
+  (menu-preset config, stringtable, arsenal-box prefab, service placement) tracked in
+  docs/WORKBENCH_TASKS.md, plus item-browser population + attachments panel script.
+- _P5_ — arsenal menu: `GRAD_ArsenalMenu` (ChimeraMenuBase) + `modded ChimeraMenuPreset` compile;
+  `UI/Layouts/GRAD_ArsenalMenu.layout` authored and validated (left rail + ItemPreviewWidget +
+  item list + OK/Cancel; GUID {88FFBAB9523831E0}). Preview via ItemPreviewManagerEntity (D1 final).
 - _P4_ — Catalog index + service authored & compiling: `GRAD_ArsenalItemRecord` (+ name sorter),
   `GRAD_CatalogIndex` (frame-amortized build from `SCR_EntityCatalogManagerComponent` via
   composition — confirms D2; general + per-faction ITEM catalogs; `OnComplete` invoker),
