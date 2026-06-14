@@ -46,8 +46,33 @@ class GRAD_GMArsenalActionUtils
 
 //------------------------------------------------------------------------------------------------
 //! GM: open the arsenal targeting all selected characters. Confirm applies the same loadout to all.
+[BaseContainerProps()]
 class GRAD_GMOpenArsenalAction : SCR_BaseContextAction
 {
+	//! Cached UI info so the action shows in the menu even if the prefab leaves m_Info unset.
+	protected ref SCR_UIInfo m_GradInfo;
+
+	//------------------------------------------------------------------------------------------------
+	void GRAD_GMOpenArsenalAction()
+	{
+		GRAD_Log.Info("GMOpenArsenal: CONSTRUCTED (action is in the loaded list)");
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! SCR_ContextActionsEditorComponent only shows actions whose GetInfo() is non-null. Provide a
+	//! fallback name in script so the action appears without per-prefab UI-info configuration.
+	override SCR_UIInfo GetInfo()
+	{
+		SCR_UIInfo info = super.GetInfo();
+		if (info)
+			return info;
+
+		if (!m_GradInfo)
+			m_GradInfo = SCR_UIInfo.CreateInfo("Open Arsenal");
+
+		return m_GradInfo;
+	}
+
 	//------------------------------------------------------------------------------------------------
 	override bool CanBeShown(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags)
 	{
@@ -87,6 +112,7 @@ class GRAD_GMOpenArsenalAction : SCR_BaseContextAction
 
 //------------------------------------------------------------------------------------------------
 //! GM: copy the hovered (or first selected) character's current loadout to the clipboard.
+[BaseContainerProps()]
 class GRAD_GMCopyLoadoutAction : SCR_BaseContextAction
 {
 	//------------------------------------------------------------------------------------------------
@@ -139,6 +165,7 @@ class GRAD_GMCopyLoadoutAction : SCR_BaseContextAction
 
 //------------------------------------------------------------------------------------------------
 //! GM: apply the clipboard loadout to every selected character (via the server RPC).
+[BaseContainerProps()]
 class GRAD_GMPasteLoadoutAction : SCR_BaseContextAction
 {
 	//------------------------------------------------------------------------------------------------

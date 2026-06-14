@@ -147,16 +147,58 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter);
 
 			// Mirror the target's current loadout onto the preview so the player edits from their
-			// real starting kit.
+			// real starting kit. force=false: the clone already carries the prefab's locked cosmetic
+			// body/clothing nodes (which cannot be re-inserted once removed). Clearing those with
+			// force=true left the clone naked and the engine despawned it. So we keep the locked
+			// nodes and only mirror the editable items on top.
 			GRAD_LoadoutData current = GRAD_LoadoutCapture.Capture(primary, "PreviewBase", true);
 			if (current)
-				GRAD_LoadoutApply.Apply(m_PreviewCharacter, current, true, true, m_aPreviewCreated);
+				GRAD_LoadoutApply.Apply(m_PreviewCharacter, current, true, false, m_aPreviewCreated);
+
+			// Pin the clone alive. A full gameplay character spawned with no controller/agent is
+			// reaped by the character/AI lifetime system after a short while (the "timeout" despawn).
+			// Deactivating the clone's entity events stops the controller ticking toward that cleanup;
+			// the preview manager keeps rendering it from its hierarchy, and inventory storage edits
+			// operate on the storage components directly so they still work. We re-activate briefly
+			// around each click-apply (see ApplyToPreview) then deactivate again.
+			PinPreviewAlive();
 		}
 
 		// Mouse orbit + wheel zoom on the preview.
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (m_wPreview && workspace)
 			m_PreviewCameraHelper = new SCR_InventoryCharacterWidgetHelper(m_wPreview, workspace);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Deactivate the preview clone's entity events so the character lifetime system stops ticking it
+	//! toward cleanup. Safe to call repeatedly.
+	protected void PinPreviewAlive()
+	{
+		if (m_PreviewCharacter)
+			m_PreviewCharacter.Deactivate();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Apply a single-item loadout to the preview clone, re-activating it for the duration of the
+	//! mutation (some inventory operations expect an active entity) and re-pinning it afterwards.
+	protected void ApplyToPreview(notnull GRAD_LoadoutData data)
+	{
+		if (!m_PreviewCharacter)
+			return;
+
+		m_PreviewCharacter.Activate();
+
+		array<IEntity> created = {};
+		GRAD_LoadoutApply.Apply(m_PreviewCharacter, data, true, false, created);
+		foreach (IEntity e : created)
+			m_aPreviewCreated.Insert(e);
+
+		// Refresh the render in case the hierarchy auto-update missed the local mutation, then re-pin.
+		if (m_PreviewManager && m_wPreview)
+			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
+
+		PinPreviewAlive();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -167,7 +209,12 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		m_wCategoryList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_CATEGORY_LIST));
 		m_wItemList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_ITEM_LIST));
 
-		// Source the records from the singleton service's (amortized) catalog index.
+		// Source the records from the singleton service's (amortized) catalog index. The service is
+		// normally placed in the world, but ensure one exists so the browser works from any entry
+		// point (GM right-click, arsenal box, etc.).
+		if (!GRAD_ArsenalService.GetInstance())
+			GRAD_MenuTest.SpawnService();
+
 		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
 		if (!service || !service.GetCatalogIndex())
 		{
@@ -300,11 +347,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_LoadoutData single = new GRAD_LoadoutData();
 		single.m_Root.AddChild(entry);
 
-		// Apply as a local additive operation (force=false so we don't strip existing kit).
-		array<IEntity> created = {};
-		GRAD_LoadoutApply.Apply(m_PreviewCharacter, single, true, false, created);
-		foreach (IEntity e : created)
-			m_aPreviewCreated.Insert(e);
+		ApplyToPreview(single);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -506,13 +549,10 @@ class GRAD_ArsenalRowHandler
 //! Maps an arsenal item-type value (a SCR_EArsenalItemType BITFLAG) to a display label for the
 //! category rail.
 //!
-//! SCR_EArsenalItemType is a power-of-two bitflag enum (values seen live: 2,4,8,16,...,4194304).
-//! We map each known bit to a readable English name here so the rail shows words, not numbers.
-//! These names are best-effort and easily edited; for full localization, replace the returned
-//! strings with `#`-prefixed stringtable keys (see docs/WORKBENCH_TASKS.md).
-//!
-//! TODO (verify in-game): confirm each bit -> name by inspecting which prefabs land in each
-//! category. Order below follows the standard Reforger arsenal type ordering; adjust as needed.
+//! SCR_EArsenalItemType is a power-of-two bitflag enum. The bit -> meaning mapping below matches
+//! the live engine enum (RIFLE = 1<<1 .. VEHICLE = 1<<22); the case values are the decimal bit
+//! values (1<<1 = 2, 1<<2 = 4, ...). These names are easily edited; for full localization, replace
+//! the returned strings with `#`-prefixed stringtable keys (see docs/WORKBENCH_TASKS.md).
 class GRAD_ArsenalCategoryLabels
 {
 	//------------------------------------------------------------------------------------------------
@@ -520,28 +560,28 @@ class GRAD_ArsenalCategoryLabels
 	{
 		switch (arsenalType)
 		{
-			case 2:       return "Rifles";
-			case 4:       return "Launchers";
-			case 8:       return "Pistols";
-			case 16:      return "Submachine Guns";
-			case 32:      return "Machine Guns";
-			case 64:      return "Grenades";
-			case 128:     return "Explosives";
-			case 256:     return "Magazines";
-			case 512:     return "Rockets";
-			case 1024:    return "Optics";
-			case 2048:    return "Muzzles";
-			case 4096:    return "Underbarrel";
-			case 8192:    return "Bayonets";
-			case 16384:   return "Headgear";
-			case 32768:   return "Uniforms";
-			case 65536:   return "Vests";
-			case 131072:  return "Backpacks";
-			case 262144:  return "Medical";
-			case 524288:  return "Equipment";
-			case 1048576: return "Radios";
-			case 2097152: return "Consumables";
-			case 4194304: return "Misc";
+			case 2:       return "Rifles";				// RIFLE = 1<<1
+			case 4:       return "Pistols";				// PISTOL = 1<<2
+			case 8:       return "Grenades";			// LETHAL_THROWABLE = 1<<3
+			case 16:      return "Launchers";			// ROCKET_LAUNCHER = 1<<4
+			case 32:      return "Machine Guns";		// MACHINE_GUN = 1<<5
+			case 64:      return "Medical";				// HEAL = 1<<6
+			case 128:     return "Backpacks";			// BACKPACK = 1<<7
+			case 256:     return "Sniper Rifles";		// SNIPER_RIFLE = 1<<8
+			case 512:     return "Smokes & Flares";		// NON_LETHAL_THROWABLE = 1<<9
+			case 1024:    return "Headgear";			// HEADWEAR = 1<<10
+			case 2048:    return "Jackets";				// TORSO = 1<<11
+			case 4096:    return "Vests & Belts";		// VEST_AND_WAIST = 1<<12
+			case 8192:    return "Trousers";			// LEGS = 1<<13
+			case 16384:   return "Footwear";			// FOOTWEAR = 1<<14
+			case 32768:   return "Radio Backpacks";		// RADIO_BACKPACK = 1<<15
+			case 65536:   return "Equipment";			// EQUIPMENT = 1<<16
+			case 131072:  return "Weapon Attachments";	// WEAPON_ATTACHMENT = 1<<17
+			case 262144:  return "Explosives";			// EXPLOSIVES = 1<<18
+			case 524288:  return "Gloves";				// HANDWEAR = 1<<19
+			case 1048576: return "Mortars";				// MORTARS = 1<<20
+			case 2097152: return "Helicopters";			// HELICOPTER = 1<<21
+			case 4194304: return "Vehicles";			// VEHICLE = 1<<22
 		}
 
 		return string.Format("Type %1", arsenalType);

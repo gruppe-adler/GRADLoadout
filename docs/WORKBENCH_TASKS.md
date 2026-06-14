@@ -75,6 +75,15 @@ add the keys above, and reference it. Until then, `#GRAD_*` keys render as raw t
 Place one `GRAD_ArsenalService` entity in each world that should host the arsenal (or add it
 to a system/gamemode prefab). It self-registers as a singleton and builds the catalog index.
 
+## 3b. GM right-click "Open Arsenal" context action (P7)
+
+The scripted `GRAD_GMOpenArsenalAction` / `GRAD_GMCopyLoadoutAction` / `GRAD_GMPasteLoadoutAction`
+(SCR_BaseContextAction subclasses) need registering into the GM editor's **context-action config**
+so they appear in the unit right-click radial menu. Target = the right-clicked/selected unit
+(player or AI), passed as the menu context's target. This is the intended primary GM entry point
+("right-click unit → Open Arsenal"). Find the editor context-actions config the GM mode loads and
+add our actions (override/extend it).
+
 ## 4. Arsenal box prefab (P7)
 
 A crate prefab inheriting a vanilla supply box, with `GRAD_ArsenalBoxComponent` (script, P7)

@@ -30,7 +30,7 @@ modded class SCR_PlayerController
 
 	//! DEBUG ONLY (P5 manual UI test): auto-open the arsenal shortly after the local controller
 	//! inits, so the menu can be seen without a console/keybind/box. REMOVE before release.
-	protected static const bool GRAD_DEBUG_AUTO_OPEN = true;
+	protected static const bool GRAD_DEBUG_AUTO_OPEN = false;
 
 	//! Monotonic request-id source for this controller's outgoing requests.
 	protected int m_iGradNextRequestId = 1;
@@ -348,9 +348,15 @@ modded class SCR_PlayerController
 			GRAD_MenuTest.SpawnService();
 
 		GRAD_ArsenalMenuContext context = new GRAD_ArsenalMenuContext();
-		IEntity localChar = SCR_PlayerController.GetLocalControlledEntity();
-		if (localChar)
-			context.AddTarget(localChar);
+
+		// Prefer the local controlled character; otherwise clone ANY character in the world (player
+		// or AI) so the preview shows a real unit even from the GM free camera.
+		IEntity target = SCR_PlayerController.GetLocalControlledEntity();
+		if (!target)
+			target = GRAD_MenuTest.FindAnyCharacter();
+
+		if (target)
+			context.AddTarget(target);
 
 		GRAD_ArsenalMenu.Open(context);
 	}

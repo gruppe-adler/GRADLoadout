@@ -91,30 +91,31 @@ class GRAD_LoadoutApply
 			return;
 		}
 
-		// Pick the live storage that matches the captured storage class; fall back to the first
-		// candidate so a renamed/changed storage class still gets a reasonable target.
+		// Pick the live storage that matches the captured storage class. May be null: a top-level
+		// item added by clicking (no captured slot address) has a blank class and no match, in which
+		// case we let the engine choose the most suitable storage rather than forcing it into the
+		// first candidate (which is the identity storage and rejects everything).
 		BaseInventoryStorageComponent storage = PickStorage(candidateStorages, entry.m_sStorageClass);
-		if (!storage)
-		{
-			GRAD_Log.Warn(string.Format("Apply: no storage for '%1' (class '%2') — skipped",
-				entry.m_sPrefab, entry.m_sStorageClass));
-			skipped++;
-			return;
-		}
 
-		IEntity created = SpawnInto(manager, storage, entry, localOnly);
-		if (!created)
+		// `created` may be null even on success: engine-chosen placement spawns the item but does
+		// not hand it back, so we can't always locate it. `spawnedOk` is the authoritative result.
+		bool spawnedOk;
+		IEntity created = SpawnInto(manager, storage, entry, localOnly, spawnedOk);
+		if (!spawnedOk)
 		{
 			// SpawnInto already logged the reason (missing prefab, no room, etc.).
 			skipped++;
 			return;
 		}
 
-		outCreated.Insert(created);
+		if (created)
+			outCreated.Insert(created);
 		spawned++;
 
-		// Recurse: the children of this entry go into THIS item's own storages.
-		if (entry.GetChildCount() > 0)
+		// Recurse: the children of this entry go into THIS item's own storages. This requires the
+		// spawned entity handle; for engine-placed items we don't have it, so children are skipped.
+		// (This only affects deep captured trees, not click-to-add which has no children.)
+		if (created && entry.GetChildCount() > 0)
 		{
 			array<BaseInventoryStorageComponent> childStorages = {};
 			BaseInventoryStorageComponent childStorage = BaseInventoryStorageComponent.Cast(created.FindComponent(BaseInventoryStorageComponent));
@@ -135,83 +136,137 @@ class GRAD_LoadoutApply
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Spawn entry.m_sPrefab into the given storage at the captured slot index. For replicated
-	//! apply this uses the manager's TrySpawnPrefabToStorage; for local preview it spawns a
-	//! local-only entity and inserts it.
+	//! Spawn entry.m_sPrefab into the target inventory. When `storage` is non-null (a captured
+	//! slot address that matched a live storage) the item is placed there at the captured slot;
+	//! when it is null (e.g. a top-level item added by clicking, with no captured address) the
+	//! engine chooses the most suitable storage — `TrySpawnPrefabToStorage(prefab, null, ...)` /
+	//! `TryInsertItem(item, PURPOSE_ANY)`. This is what routes a vest to the vest slot, a magazine
+	//! to a pouch, etc., instead of forcing everything into the first (identity) storage.
 	//!
-	//! Returns the created entity, or null on failure (missing prefab / no room) — caller treats
-	//! null as a skip.
+	//! `spawnedOk` is set true whenever the item was actually placed — even when we cannot return
+	//! the entity handle (engine-chosen replicated placement does not return it). The returned
+	//! entity is non-null only when we know its exact storage+slot (used for child recursion).
 	protected static IEntity SpawnInto(
 		notnull InventoryStorageManagerComponent manager,
-		notnull BaseInventoryStorageComponent storage,
+		BaseInventoryStorageComponent storage,
 		notnull GRAD_LoadoutEntry entry,
-		bool localOnly)
+		bool localOnly,
+		out bool spawnedOk)
 	{
+		spawnedOk = false;
 		ResourceName prefab = entry.m_sPrefab;
 
 		if (localOnly)
 		{
-			// Local preview path: spawn a non-replicated entity and insert it into the storage.
+			// Local preview path: spawn a non-replicated entity and insert it.
 			IEntity item = GRAD_InventoryLib.SpawnLocal(prefab);
 			if (!item)
 				return null;
 
-			bool inserted = manager.TryInsertItemInStorage(item, storage, entry.m_iSlotIndex);
-			if (!inserted)
+			bool inserted;
+			if (storage)
 			{
-				// Could not place at the recorded slot; try any free slot in this storage.
-				inserted = manager.TryInsertItemInStorage(item, storage, -1);
+				// Captured slot address: place at the recorded slot, else any free slot in it.
+				inserted = manager.TryInsertItemInStorage(item, storage, entry.m_iSlotIndex);
+				if (!inserted)
+					inserted = manager.TryInsertItemInStorage(item, storage, -1);
 			}
+
+			// No matched storage (or targeted placement failed): equip it. Clothing/gear (headgear,
+			// vest, uniform, backpack) lives in LOCKED loadout slots that plain insertion refuses;
+			// EquipAny routes the item to the correct loadout slot, replacing what's there. Falls
+			// back to free insertion (PURPOSE_ANY) for items that belong in a container (magazines,
+			// grenades, meds).
+			if (!inserted)
+				inserted = TryEquipOrInsert(manager, item);
 
 			if (!inserted)
 			{
-				GRAD_Log.Warn(string.Format("Apply(local): could not insert '%1' into %2",
-					prefab, storage.Type().ToString()));
+				GRAD_Log.Warn(string.Format("Apply(local): could not place '%1' (no suitable slot/storage)", prefab));
 				SCR_EntityHelper.DeleteEntityAndChildren(item);
 				return null;
 			}
 
+			spawnedOk = true;
 			return item;
 		}
 
-		// Replicated path: the manager spawns and inserts in one authoritative step.
-		bool ok = manager.TrySpawnPrefabToStorage(prefab, storage, entry.m_iSlotIndex);
+		// Replicated path: the manager spawns and inserts in one authoritative step. A null storage
+		// tells the engine to choose the most suitable owned storage.
+		bool ok;
+		int slotID = -1;
+		if (storage)
+		{
+			slotID = entry.m_iSlotIndex;
+			ok = manager.TrySpawnPrefabToStorage(prefab, storage, slotID);
+			if (!ok)
+				ok = manager.TrySpawnPrefabToStorage(prefab, storage, -1);
+		}
+
+		// No matched storage (or targeted spawn failed): engine-chosen placement.
 		if (!ok)
 		{
-			// Retry with free insertion before giving up.
-			ok = manager.TrySpawnPrefabToStorage(prefab, storage, -1);
+			ok = manager.TrySpawnPrefabToStorage(prefab, null, -1, EStoragePurpose.PURPOSE_ANY);
+			storage = null; // read-back below must reflect the engine-chosen storage, which we don't know
 		}
 
 		if (!ok)
 		{
-			GRAD_Log.Warn(string.Format("Apply: TrySpawnPrefabToStorage failed for '%1' in %2",
-				prefab, storage.Type().ToString()));
+			GRAD_Log.Warn(string.Format("Apply: TrySpawnPrefabToStorage failed for '%1' (no suitable storage)", prefab));
 			return null;
 		}
 
-		// TrySpawnPrefabToStorage does not directly return the entity; read it back from the slot.
-		IEntity created = storage.Get(entry.m_iSlotIndex);
-		return created;
+		spawnedOk = true;
+
+		// TrySpawnPrefabToStorage does not return the entity. We can only read it back when we know
+		// the exact storage+slot (the targeted path). For engine-chosen placement we cannot reliably
+		// locate it, so return null for the created-entity handle while still counting it as spawned.
+		if (storage)
+			return storage.Get(slotID);
+
+		return null;
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Choose the storage whose class name matches the captured class; otherwise the first
-	//! candidate. Returns null only if there are no candidates.
-	protected static BaseInventoryStorageComponent PickStorage(notnull array<BaseInventoryStorageComponent> candidates, string wantedClass)
+	//! Place an already-spawned item onto the character using the type-aware equip path, falling
+	//! back to free container insertion. EquipAny resolves the correct loadout slot for clothing/gear
+	//! (headgear, vest, uniform, backpack) — slots that are LOCKED and which plain TryInsertItem
+	//! refuses. Items that belong in a container (magazines, grenades, medical) are not clothing, so
+	//! EquipAny returns false for them and we fall through to TryInsertItem(PURPOSE_ANY).
+	//!
+	//! Requires the SCR_ subclass of the manager (where EquipAny / GetCharacterStorage live); if the
+	//! entity only has the base manager we can only do free insertion.
+	protected static bool TryEquipOrInsert(notnull InventoryStorageManagerComponent manager, notnull IEntity item)
 	{
-		if (candidates.IsEmpty())
-			return null;
-
-		if (!GRAD_CommonUtils.IsBlank(wantedClass))
+		SCR_InventoryStorageManagerComponent scrManager = SCR_InventoryStorageManagerComponent.Cast(manager);
+		if (scrManager)
 		{
-			foreach (BaseInventoryStorageComponent storage : candidates)
-			{
-				if (storage && storage.Type().ToString() == wantedClass)
-					return storage;
-			}
+			SCR_CharacterInventoryStorageComponent charStorage = scrManager.GetCharacterStorage();
+			if (charStorage && scrManager.EquipAny(charStorage, item, -1))
+				return true;
 		}
 
-		return candidates[0];
+		// Not clothing/gear (or no character storage): try free insertion into any suitable storage.
+		return manager.TryInsertItem(item, EStoragePurpose.PURPOSE_ANY);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Choose the storage whose class name matches the captured class. Returns null when there is
+	//! no match (including a blank wanted class) — the caller treats null as "let the engine choose
+	//! the most suitable storage" rather than forcing the item into candidates[0] (the identity
+	//! storage), which rejects nearly everything.
+	protected static BaseInventoryStorageComponent PickStorage(notnull array<BaseInventoryStorageComponent> candidates, string wantedClass)
+	{
+		if (candidates.IsEmpty() || GRAD_CommonUtils.IsBlank(wantedClass))
+			return null;
+
+		foreach (BaseInventoryStorageComponent storage : candidates)
+		{
+			if (storage && storage.Type().ToString() == wantedClass)
+				return storage;
+		}
+
+		return null;
 	}
 
 	//------------------------------------------------------------------------------------------------
