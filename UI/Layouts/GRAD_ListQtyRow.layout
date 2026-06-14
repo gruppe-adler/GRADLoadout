@@ -1,0 +1,43 @@
+HorizontalLayoutWidgetClass {
+ Name "QtyRow"
+ {
+  TextWidgetClass "{A1B2C3D4E5F60001}" {
+   Name "Label"
+   Slot LayoutSlot "{A1B2C3D4E5F60002}" {
+    Padding 4 2 4 2
+   }
+   Text "Item"
+   "Vertical Alignment" Center
+  }
+  ButtonWidgetClass "{A1B2C3D4E5F60003}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+   Name "ButtonMinus"
+   Slot LayoutSlot "{A1B2C3D4E5F60004}" {
+    Padding 2 2 2 2
+   }
+   components {
+    SCR_InputButtonComponent "{A1B2C3D4E5F60005}" {
+     m_sActionName "MenuSelect"
+    }
+   }
+  }
+  TextWidgetClass "{A1B2C3D4E5F60008}" {
+   Name "Count"
+   Slot LayoutSlot "{A1B2C3D4E5F60009}" {
+    Padding 6 2 6 2
+   }
+   Text "0"
+   "Vertical Alignment" Center
+  }
+  ButtonWidgetClass "{A1B2C3D4E5F6000A}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+   Name "ButtonPlus"
+   Slot LayoutSlot "{A1B2C3D4E5F6000B}" {
+    Padding 2 2 2 2
+   }
+   components {
+    SCR_InputButtonComponent "{A1B2C3D4E5F6000C}" {
+     m_sActionName "MenuSelect"
+    }
+   }
+  }
+ }
+}

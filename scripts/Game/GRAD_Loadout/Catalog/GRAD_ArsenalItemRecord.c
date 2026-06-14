@@ -9,8 +9,16 @@ class GRAD_ArsenalItemRecord
 	//! Prefab to spawn for this item.
 	ResourceName m_sPrefab;
 
-	//! Localized display name (resolved from the catalog UI info).
+	//! Final display name shown in the UI. Equals m_sBaseName for unique items, or
+	//! "<base> (<variant>)" when several items share a base name (see GRAD_CatalogIndex dedupe).
 	string m_sDisplayName;
+
+	//! Localized base name from the catalog (shared across an item family's variants).
+	string m_sBaseName;
+
+	//! Variant tag derived from the prefab stem (e.g. "carbine M203"), used to disambiguate
+	//! same-named variants. Empty if the prefab adds nothing beyond the base name.
+	string m_sVariantSuffix;
 
 	//! Arsenal item type (weapon / vest / headgear / magazine / ...), used to decide which slots
 	//! this item is valid for. Stored as int to stay decoupled from the engine enum at the record
@@ -24,10 +32,12 @@ class GRAD_ArsenalItemRecord
 	string m_sFactionKey;
 
 	//------------------------------------------------------------------------------------------------
-	void GRAD_ArsenalItemRecord(ResourceName prefab, string displayName, int arsenalType, SCR_UIInfo uiInfo, string factionKey)
+	void GRAD_ArsenalItemRecord(ResourceName prefab, string displayName, int arsenalType, SCR_UIInfo uiInfo, string factionKey, string variantSuffix = string.Empty)
 	{
 		m_sPrefab = prefab;
-		m_sDisplayName = displayName;
+		m_sBaseName = displayName;
+		m_sDisplayName = displayName;	// dedupe pass may append the variant suffix later
+		m_sVariantSuffix = variantSuffix;
 		m_iArsenalType = arsenalType;
 		m_UiInfo = uiInfo;
 		m_sFactionKey = factionKey;

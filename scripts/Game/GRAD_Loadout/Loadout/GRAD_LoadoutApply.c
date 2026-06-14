@@ -259,12 +259,21 @@ class GRAD_LoadoutApply
 		SCR_InventoryStorageManagerComponent scrManager = SCR_InventoryStorageManagerComponent.Cast(manager);
 		if (scrManager)
 		{
+			// Weapons go through the weapon-equip path so they take the weapon slot (holstering the
+			// previous weapon) instead of EquipAny filling every weapon slot until full. Detect a
+			// weapon by its WeaponComponent on the spawned entity.
+			if (item.FindComponent(WeaponComponent))
+			{
+				if (scrManager.EquipWeapon(item))
+					return true;
+			}
+
 			SCR_CharacterInventoryStorageComponent charStorage = scrManager.GetCharacterStorage();
 			if (charStorage && scrManager.EquipAny(charStorage, item, -1))
 				return true;
 		}
 
-		// Not clothing/gear (or no character storage): try free insertion into any suitable storage.
+		// Not clothing/gear/weapon (or no character storage): free insertion into any suitable storage.
 		return manager.TryInsertItem(item, EStoragePurpose.PURPOSE_ANY);
 	}
 

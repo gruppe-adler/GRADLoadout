@@ -29,6 +29,12 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected const string WIDGET_BTN_CANCEL		= "ButtonCancel";
 	protected const string WIDGET_TITLE				= "Title";
 
+	// Widget names inside the quantity row layout (UI/Layouts/GRAD_ListQtyRow.layout).
+	protected const string WIDGET_QTY_LABEL			= "Label";
+	protected const string WIDGET_QTY_COUNT			= "Count";
+	protected const string WIDGET_QTY_MINUS			= "ButtonMinus";
+	protected const string WIDGET_QTY_PLUS			= "ButtonPlus";
+
 	// Runtime context (target entities, permission hint) set before the menu opens.
 	protected static ref GRAD_ArsenalMenuContext s_PendingContext;
 
@@ -53,6 +59,10 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 	// Row button layout (vanilla text button + our SCR_InputButtonComponent).
 	protected const ResourceName ROW_LAYOUT = "{4BE35AEBB44455F0}UI/Layouts/GRAD_ListButtonRow.layout";
+
+	// Quantity row layout (label + [-] count [+]) for stackable categories. GUID filled in after the
+	// layout is authored + registered via wb_resources.
+	protected const ResourceName QTY_ROW_LAYOUT = "{A704EDAAAADC6AD9}UI/Layouts/GRAD_ListQtyRow.layout";
 
 	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aRowHandlers = {};
@@ -146,6 +156,10 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		{
 			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter);
 
+			// Make the clone's face/appearance match the edited unit (a fresh prefab spawn gets a
+			// random identity otherwise). Copy the source unit's Identity onto the clone.
+			CopyIdentity(primary, m_PreviewCharacter);
+
 			// Mirror the target's current loadout onto the preview so the player edits from their
 			// real starting kit. force=false: the clone already carries the prefab's locked cosmetic
 			// body/clothing nodes (which cannot be re-inserted once removed). Clearing those with
@@ -168,6 +182,27 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (m_wPreview && workspace)
 			m_PreviewCameraHelper = new SCR_InventoryCharacterWidgetHelper(m_wPreview, workspace);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Copy the source character's identity (face/voice/appearance) onto the destination clone so the
+	//! preview looks like the actual unit, not a random spawn.
+	protected void CopyIdentity(IEntity source, IEntity dest)
+	{
+		if (!source || !dest)
+			return;
+
+		CharacterIdentityComponent srcId = CharacterIdentityComponent.Cast(source.FindComponent(CharacterIdentityComponent));
+		CharacterIdentityComponent dstId = CharacterIdentityComponent.Cast(dest.FindComponent(CharacterIdentityComponent));
+		if (!srcId || !dstId)
+			return;
+
+		Identity identity = srcId.GetIdentity();
+		if (!identity)
+			return;
+
+		dstId.SetIdentity(identity);
+		dstId.CommitChanges();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -320,6 +355,19 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 		ClearChildren(m_wItemList);
 
+		int activeType = m_Browser.GetActiveCategory();
+		bool stackable = GRAD_ArsenalCategoryLabels.IsStackable(activeType);
+
+		// [ Empty ] row at the top clears whatever is equipped in this category.
+		Widget emptyRow = CreateRow(m_wItemList, "[ Empty ]");
+		if (emptyRow)
+		{
+			GRAD_ArsenalRowHandler eh = new GRAD_ArsenalRowHandler(this, emptyRow);
+			eh.m_bIsEmptyRow = true;
+			eh.m_iActiveCategoryType = activeType;
+			m_aRowHandlers.Insert(eh);
+		}
+
 		array<ref GRAD_ArsenalItemRecord> records = {};
 		m_Browser.GetFiltered(records);
 
@@ -328,15 +376,56 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			if (!rec)
 				continue;
 
-			Widget row = CreateRow(m_wItemList, rec.m_sDisplayName);
-			if (!row)
-				continue;
-
-			GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
-			handler.m_Record = rec;
-			handler.m_bIsCategory = false;
-			m_aRowHandlers.Insert(handler);
+			if (stackable)
+				CreateQuantityRow(rec);
+			else
+				CreateItemRow(rec);
 		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Plain click-to-equip row for a single-slot item.
+	protected void CreateItemRow(notnull GRAD_ArsenalItemRecord rec)
+	{
+		Widget row = CreateRow(m_wItemList, rec.m_sDisplayName);
+		if (!row)
+			return;
+
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+		handler.m_Record = rec;
+		handler.m_bIsCategory = false;
+		m_aRowHandlers.Insert(handler);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Quantity row (label + [-] N [+]) for a stackable item. Shows the count currently on the
+	//! preview character so the GM sees how many will be applied.
+	protected void CreateQuantityRow(notnull GRAD_ArsenalItemRecord rec)
+	{
+		WorkspaceWidget workspace = GetGame().GetWorkspace();
+		if (!workspace)
+			return;
+
+		Widget row = workspace.CreateWidgets(QTY_ROW_LAYOUT, m_wItemList);
+		if (!row)
+			return;
+
+		TextWidget label = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_LABEL));
+		if (label)
+			label.SetText(rec.m_sDisplayName);
+
+		TextWidget count = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_COUNT));
+		if (count)
+			count.SetText(CountOnPreview(rec.m_sPrefab).ToString());
+
+		// Caption the inherited text buttons.
+		SetButtonText(row, WIDGET_QTY_MINUS, "-");
+		SetButtonText(row, WIDGET_QTY_PLUS, "+");
+
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row, false);
+		handler.m_Record = rec;
+		handler.BindQuantityButtons(row, WIDGET_QTY_MINUS, WIDGET_QTY_PLUS, WIDGET_QTY_COUNT);
+		m_aRowHandlers.Insert(handler);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -352,6 +441,134 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		single.m_Root.AddChild(entry);
 
 		ApplyToPreview(single);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Called when the "[ Empty ]" row is clicked: remove every item currently on the preview whose
+	//! catalog arsenal type matches the active category. Clears the helmet for Headgear, the rifle for
+	//! Rifles, all grenades for Grenades, etc.
+	void OnEmptyRowClicked(int categoryType)
+	{
+		if (!m_PreviewCharacter || categoryType == 0)
+			return;
+
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (!service || !service.GetCatalogIndex())
+			return;
+		GRAD_CatalogIndex index = service.GetCatalogIndex();
+
+		SCR_InventoryStorageManagerComponent manager =
+			SCR_InventoryStorageManagerComponent.Cast(m_PreviewCharacter.FindComponent(SCR_InventoryStorageManagerComponent));
+		if (!manager)
+			return;
+
+		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
+		if (ge)
+			ge.Activate();
+
+		array<IEntity> items = {};
+		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
+
+		int removed = 0;
+		// Leaf-first so nested items go before their containers.
+		for (int i = items.Count() - 1; i >= 0; i--)
+		{
+			IEntity item = items[i];
+			if (!item)
+				continue;
+
+			ResourceName prefab = GRAD_InventoryLib.GetPrefabResourceName(item);
+			if (index.GetArsenalTypeForPrefab(prefab) != categoryType)
+				continue;
+
+			if (manager.TryRemoveItemFromInventory(item))
+			{
+				SCR_EntityHelper.DeleteEntityAndChildren(item);
+				removed++;
+			}
+		}
+
+		GRAD_Log.Info(string.Format("Empty: removed %1 item(s) of category %2", removed, categoryType));
+
+		if (m_PreviewManager && m_wPreview)
+			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
+
+		PinPreviewAlive();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Called by a quantity row's +/- buttons. delta=+1 adds one of the item to the preview; delta=-1
+	//! removes one equipped instance. Returns the new count on the preview (for the row to display).
+	int OnQuantityChanged(GRAD_ArsenalItemRecord record, int delta)
+	{
+		if (!record || !m_PreviewCharacter)
+			return 0;
+
+		if (delta > 0)
+		{
+			GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(record.m_sPrefab, -1, string.Empty, 1);
+			GRAD_LoadoutData single = new GRAD_LoadoutData();
+			single.m_Root.AddChild(entry);
+			ApplyToPreview(single);
+		}
+		else if (delta < 0)
+		{
+			RemoveOneFromPreview(record.m_sPrefab);
+		}
+
+		return CountOnPreview(record.m_sPrefab);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Number of instances of a prefab currently equipped on the preview character.
+	protected int CountOnPreview(ResourceName prefab)
+	{
+		if (!m_PreviewCharacter)
+			return 0;
+
+		array<IEntity> items = {};
+		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
+
+		int count = 0;
+		foreach (IEntity item : items)
+		{
+			if (item && GRAD_InventoryLib.GetPrefabResourceName(item) == prefab)
+				count++;
+		}
+		return count;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Remove a single equipped instance of a prefab from the preview character.
+	protected void RemoveOneFromPreview(ResourceName prefab)
+	{
+		SCR_InventoryStorageManagerComponent manager =
+			SCR_InventoryStorageManagerComponent.Cast(m_PreviewCharacter.FindComponent(SCR_InventoryStorageManagerComponent));
+		if (!manager)
+			return;
+
+		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
+		if (ge)
+			ge.Activate();
+
+		array<IEntity> items = {};
+		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
+
+		for (int i = items.Count() - 1; i >= 0; i--)
+		{
+			IEntity item = items[i];
+			if (!item || GRAD_InventoryLib.GetPrefabResourceName(item) != prefab)
+				continue;
+
+			if (manager.TryRemoveItemFromInventory(item))
+				SCR_EntityHelper.DeleteEntityAndChildren(item);
+			break; // remove just one
+		}
+
+		if (m_PreviewManager && m_wPreview)
+			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
+
+		PinPreviewAlive();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -371,6 +588,19 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			text.SetText(label);
 
 		return row;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Set the caption of a named WLib text button inside a row.
+	protected void SetButtonText(notnull Widget root, string buttonName, string caption)
+	{
+		Widget btn = root.FindAnyWidget(buttonName);
+		if (!btn)
+			return;
+
+		SCR_ButtonTextComponent text = SCR_ButtonTextComponent.FindButtonTextComponent(btn);
+		if (text)
+			text.SetText(caption);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -523,17 +753,42 @@ class GRAD_ArsenalRowHandler
 	protected GRAD_ArsenalMenu m_Menu;
 
 	int m_iCategoryIndex = -1;			//!< meaningful when m_bIsCategory
-	ref GRAD_ArsenalItemRecord m_Record;	//!< meaningful when !m_bIsCategory
-	bool m_bIsCategory;
+	ref GRAD_ArsenalItemRecord m_Record;	//!< meaningful for item / quantity rows
+	bool m_bIsCategory;					//!< category-rail row
+	bool m_bIsEmptyRow;					//!< the "[ Empty ]" row that clears the active category
+	int m_iActiveCategoryType;			//!< category type bit this row's [Empty] should clear
+
+	//! For quantity rows: the count label to refresh after +/- (null on plain rows).
+	TextWidget m_wCountLabel;
 
 	//------------------------------------------------------------------------------------------------
-	void GRAD_ArsenalRowHandler(GRAD_ArsenalMenu menu, notnull Widget rowWidget)
+	//! Plain row: a single button activates OnActivated. For quantity rows pass bindSingleButton =
+	//! false (the row root is a layout with TWO buttons; bind them via BindQuantityButtons instead).
+	void GRAD_ArsenalRowHandler(GRAD_ArsenalMenu menu, notnull Widget rowWidget, bool bindSingleButton = true)
 	{
 		m_Menu = menu;
 
-		SCR_InputButtonComponent button = SCR_InputButtonComponent.FindComponent(rowWidget);
-		if (button)
-			button.m_OnActivated.Insert(OnActivated);
+		if (bindSingleButton)
+		{
+			SCR_InputButtonComponent button = SCR_InputButtonComponent.FindComponent(rowWidget);
+			if (button)
+				button.m_OnActivated.Insert(OnActivated);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Bind the two buttons of a quantity row (looked up by name) to +/- handlers.
+	void BindQuantityButtons(notnull Widget rowWidget, string minusName, string plusName, string countName)
+	{
+		SCR_InputButtonComponent minusBtn = SCR_InputButtonComponent.GetInputButtonComponent(minusName, rowWidget);
+		if (minusBtn)
+			minusBtn.m_OnActivated.Insert(OnMinus);
+
+		SCR_InputButtonComponent plusBtn = SCR_InputButtonComponent.GetInputButtonComponent(plusName, rowWidget);
+		if (plusBtn)
+			plusBtn.m_OnActivated.Insert(OnPlus);
+
+		m_wCountLabel = TextWidget.Cast(rowWidget.FindAnyWidget(countName));
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -542,10 +797,33 @@ class GRAD_ArsenalRowHandler
 		if (!m_Menu)
 			return;
 
-		if (m_bIsCategory)
+		if (m_bIsEmptyRow)
+			m_Menu.OnEmptyRowClicked(m_iActiveCategoryType);
+		else if (m_bIsCategory)
 			m_Menu.SelectCategoryByIndex(m_iCategoryIndex);
 		else
 			m_Menu.OnItemRowClicked(m_Record);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void OnPlus()
+	{
+		if (m_Menu && m_Record)
+			RefreshCount(m_Menu.OnQuantityChanged(m_Record, 1));
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void OnMinus()
+	{
+		if (m_Menu && m_Record)
+			RefreshCount(m_Menu.OnQuantityChanged(m_Record, -1));
+	}
+
+	//------------------------------------------------------------------------------------------------
+	void RefreshCount(int count)
+	{
+		if (m_wCountLabel)
+			m_wCountLabel.SetText(count.ToString());
 	}
 }
 
@@ -589,5 +867,24 @@ class GRAD_ArsenalCategoryLabels
 		}
 
 		return string.Format("Type %1", arsenalType);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether a category holds STACKABLE items (where carrying several makes sense — ammo, grenades,
+	//! meds, explosives) versus single-slot items (one weapon per slot, one helmet, etc.). Stackable
+	//! categories get a [-] N [+] quantity control; single-slot categories get plain click-to-equip.
+	//!
+	//! Bit values are SCR_EArsenalItemType (RIFLE=1<<1 .. VEHICLE=1<<22). Adjust the set here after a
+	//! live check if a category feels wrong.
+	static bool IsStackable(int arsenalType)
+	{
+		const int STACKABLE =
+			  (1 << 3)    // LETHAL_THROWABLE (grenades)
+			| (1 << 6)    // HEAL (medical)
+			| (1 << 9)    // NON_LETHAL_THROWABLE (smokes/flares)
+			| (1 << 16)   // EQUIPMENT (misc carryables)
+			| (1 << 18);  // EXPLOSIVES (mines/charges)
+
+		return (arsenalType & STACKABLE) != 0;
 	}
 }
