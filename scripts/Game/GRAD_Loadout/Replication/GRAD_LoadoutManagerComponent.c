@@ -53,6 +53,29 @@ modded class SCR_PlayerController
 	{
 		if (GRAD_DEBUG_AUTO_OPEN)
 			GetGame().GetCallqueue().CallLater(GradDebugAutoOpenTick, 3000, true);
+
+		// Warm the arsenal catalog ahead of first use so the item browser is instant when the GM
+		// opens it. Spawning the service starts the amortized index build (492 records over frames);
+		// doing it now (on world entry) means it is finished long before the editor/arsenal is opened.
+		GetGame().GetCallqueue().CallLater(GradPreloadArsenalTick, 2000, true);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One-shot: once this is the LOCAL controller, spawn the arsenal service (which kicks off the
+	//! catalog build) and stop ticking. Runs early so the catalog is ready before the GM opens the
+	//! editor/arsenal. No-op on dedicated servers / non-local controllers.
+	protected void GradPreloadArsenalTick()
+	{
+		if (GradGetLocal() != this)
+			return; // not yet (or not) the local controller — keep waiting
+
+		GetGame().GetCallqueue().Remove(GradPreloadArsenalTick);
+
+		if (!GRAD_ArsenalService.GetInstance())
+		{
+			GRAD_MenuTest.SpawnService();
+			GRAD_Log.Info("Arsenal preload: service spawned, catalog build started");
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------

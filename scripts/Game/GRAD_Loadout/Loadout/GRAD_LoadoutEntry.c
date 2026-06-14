@@ -40,13 +40,30 @@ class GRAD_LoadoutEntry
 	ref array<ref GRAD_LoadoutEntry> m_aChildren;
 
 	//------------------------------------------------------------------------------------------------
-	void GRAD_LoadoutEntry(string prefab = string.Empty, int slotIndex = -1, string storageClass = string.Empty, int quantity = 1)
+	//! Zero-argument constructor. REQUIRED by the engine container serializer (SCR_Json*Context):
+	//! it instantiates each node via a no-arg constructor before reading members. A single
+	//! constructor with all-default args does NOT satisfy this — it must be a genuine zero-arg
+	//! overload. Without it, deserialization fails with "needs to have a constructor with zero
+	//! arguments when using serialization" and the loadout comes back empty.
+	void GRAD_LoadoutEntry()
 	{
-		m_sPrefab = prefab;
-		m_iSlotIndex = slotIndex;
-		m_sStorageClass = storageClass;
-		m_iQuantity = quantity;
+		m_sPrefab = string.Empty;
+		m_iSlotIndex = -1;
+		m_sStorageClass = string.Empty;
+		m_iQuantity = 1;
 		m_aChildren = new array<ref GRAD_LoadoutEntry>();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Convenience factory for constructing a populated entry in code (capture/click paths).
+	static GRAD_LoadoutEntry Create(string prefab, int slotIndex = -1, string storageClass = string.Empty, int quantity = 1)
+	{
+		GRAD_LoadoutEntry e = new GRAD_LoadoutEntry();
+		e.m_sPrefab = prefab;
+		e.m_iSlotIndex = slotIndex;
+		e.m_sStorageClass = storageClass;
+		e.m_iQuantity = quantity;
+		return e;
 	}
 
 	//------------------------------------------------------------------------------------------------

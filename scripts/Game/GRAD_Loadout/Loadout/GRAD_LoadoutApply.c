@@ -26,7 +26,11 @@ class GRAD_LoadoutApply
 	//! \param force         true = also clear locked slots before applying (server/GM)
 	//! \param outCreated    receives every entity created, for later cleanup
 	//! \return true if apply completed (even if some items were skipped), false on a fatal setup error
-	static bool Apply(IEntity target, GRAD_LoadoutData data, bool localOnly, bool force, out notnull array<IEntity> outCreated)
+	//! \param clearFirst   true = strip the target's editable slots before applying (full-loadout
+	//!                      restore / OK confirm); false = ADD the data on top of the current kit
+	//!                      without clearing (single-item click in the arsenal). Defaults to true to
+	//!                      preserve the full-loadout behavior.
+	static bool Apply(IEntity target, GRAD_LoadoutData data, bool localOnly, bool force, out notnull array<IEntity> outCreated, bool clearFirst = true)
 	{
 		outCreated.Clear();
 
@@ -49,9 +53,23 @@ class GRAD_LoadoutApply
 			return false;
 		}
 
-		// 1) Strip the target down to its editable (or all, if force) slots.
-		int cleared = GRAD_InventoryLib.ClearStorages(target, force);
-		GRAD_Log.Info(string.Format("Apply: cleared %1 items from %2", cleared, GRAD_InventoryLib.GetEntityShortName(target)));
+		// Safety: a clearing apply with an empty loadout would strip the target and add nothing back,
+		// leaving the unit naked. This happens if capture/serialization produced no entries (e.g. the
+		// zero-arg-constructor serialization bug). Refuse rather than destroy the unit's kit.
+		if (clearFirst && data.m_Root.GetChildCount() == 0)
+		{
+			GRAD_Log.Error(string.Format("Apply: refusing to clear %1 for an EMPTY loadout (would leave it naked)",
+				GRAD_InventoryLib.GetEntityShortName(target)));
+			return false;
+		}
+
+		// 1) Strip the target down to its editable (or all, if force) slots — unless this is an
+		//    additive apply (a single-item click), which must leave the existing kit untouched.
+		if (clearFirst)
+		{
+			int cleared = GRAD_InventoryLib.ClearStorages(target, force);
+			GRAD_Log.Info(string.Format("Apply: cleared %1 items from %2", cleared, GRAD_InventoryLib.GetEntityShortName(target)));
+		}
 
 		// 2) Resolve the target's top-level storages so we can map captured storage classes to live
 		//    storages. Children of the root entry are placed into these.

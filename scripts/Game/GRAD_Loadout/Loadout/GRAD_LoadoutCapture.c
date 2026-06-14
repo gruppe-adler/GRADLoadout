@@ -86,7 +86,7 @@ class GRAD_LoadoutCapture
 				continue;
 			}
 
-			GRAD_LoadoutEntry entry = new GRAD_LoadoutEntry(prefab, slotId, storageClass, 1);
+			GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(prefab, slotId, storageClass, 1);
 			parentEntry.AddChild(entry);
 
 			// Recurse into this item's own storages (e.g. magazines inside a vest pouch, optic on

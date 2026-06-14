@@ -175,8 +175,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! toward cleanup. Safe to call repeatedly.
 	protected void PinPreviewAlive()
 	{
-		if (m_PreviewCharacter)
-			m_PreviewCharacter.Deactivate();
+		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
+		if (ge)
+			ge.Deactivate();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -187,10 +188,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (!m_PreviewCharacter)
 			return;
 
-		m_PreviewCharacter.Activate();
+		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
+		if (ge)
+			ge.Activate();
 
+		// clearFirst=false: this is an ADDITIVE single-item add; do not strip the existing kit.
 		array<IEntity> created = {};
-		GRAD_LoadoutApply.Apply(m_PreviewCharacter, data, true, false, created);
+		GRAD_LoadoutApply.Apply(m_PreviewCharacter, data, true, false, created, false);
 		foreach (IEntity e : created)
 			m_aPreviewCreated.Insert(e);
 
@@ -343,7 +347,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			return;
 
 		// Add the chosen item to the preview locally. The engine auto-refreshes the preview render.
-		GRAD_LoadoutEntry entry = new GRAD_LoadoutEntry(record.m_sPrefab, -1, string.Empty, 1);
+		GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(record.m_sPrefab, -1, string.Empty, 1);
 		GRAD_LoadoutData single = new GRAD_LoadoutData();
 		single.m_Root.AddChild(entry);
 
