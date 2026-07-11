@@ -232,41 +232,7 @@ class GRAD_CatalogIndex
 
 		string variantSuffix = VariantSuffixFromPrefab(prefab);
 
-		// DIAGNOSTIC (temporary, step 0): dump the native editable-entity labels for a sample so we
-		// can pick a label that tracks caliber/family for grouping. Limited count to keep logs sane.
-		GRAD_DebugDumpLabels(entry, displayName, prefab, arsenalType);
-
 		return new GRAD_ArsenalItemRecord(prefab, displayName, arsenalType, uiInfo, factionKey, variantSuffix);
-	}
-
-	//! DIAGNOSTIC (temporary): how many label dumps we've emitted, to cap log spam.
-	protected static int s_iLabelDumpCount = 0;
-
-	//------------------------------------------------------------------------------------------------
-	//! DIAGNOSTIC (temporary, step 0): log the native editable-entity labels for an entry so we can
-	//! choose a grouping field. Caps total output. Logs the integer label values (the enum may not be
-	//! script-reachable) alongside name/prefab/arsenalType.
-	protected void GRAD_DebugDumpLabels(notnull SCR_EntityCatalogEntry entry, string name, ResourceName prefab, int arsenalType)
-	{
-		if (s_iLabelDumpCount >= 80)
-			return;
-
-		array<EEditableEntityLabel> labels = {};
-		entry.GetEditableEntityLabels(labels);
-
-		string labelStr = "";
-		foreach (EEditableEntityLabel lbl : labels)
-		{
-			if (labelStr != "")
-				labelStr += ",";
-			labelStr += lbl.ToString();
-		}
-
-		string shortPrefab = SCR_StringHelper.FormatResourceNameToUserFriendly(prefab);
-		GRAD_Log.Info(string.Format("LABELDUMP atype=%1 name='%2' prefab='%3' labels=[%4]",
-			arsenalType, name, shortPrefab, labelStr));
-
-		s_iLabelDumpCount++;
 	}
 
 	//------------------------------------------------------------------------------------------------

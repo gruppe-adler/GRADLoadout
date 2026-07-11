@@ -131,6 +131,66 @@ class GRAD_ItemBrowser
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Produce the filtered records bucketed into groups by base name (variants of one item group
+	//! together, e.g. "SVD Mag" -> its API/Tracer/LPS variants). Groups are sorted by label; items
+	//! within each group by display name. A base name with a single record still forms a group (the
+	//! renderer shows single-item groups as a plain row).
+	int GetGrouped(out notnull array<ref GRAD_ItemGroup> outGroups)
+	{
+		outGroups.Clear();
+
+		array<ref GRAD_ArsenalItemRecord> records = {};
+		GetFiltered(records);
+
+		// Bucket by base name, preserving first-seen group order via a key->index map.
+		map<string, int> indexByKey = new map<string, int>();
+		foreach (GRAD_ArsenalItemRecord rec : records)
+		{
+			if (!rec)
+				continue;
+
+			string key = rec.m_sBaseName;
+			if (GRAD_CommonUtils.IsBlank(key))
+				key = rec.m_sDisplayName;
+
+			int gi;
+			if (!indexByKey.Find(key, gi))
+			{
+				GRAD_ItemGroup group = new GRAD_ItemGroup();
+				group.m_sLabel = key;
+				outGroups.Insert(group);
+				gi = outGroups.Count() - 1;
+				indexByKey.Set(key, gi);
+			}
+
+			outGroups[gi].m_aItems.Insert(rec);
+		}
+
+		// Sort groups alphabetically by label (simple selection sort — group counts are small).
+		for (int i = 0, n = outGroups.Count(); i < n - 1; i++)
+		{
+			int min = i;
+			for (int j = i + 1; j < n; j++)
+			{
+				if (outGroups[j].m_sLabel < outGroups[min].m_sLabel)
+					min = j;
+			}
+			if (min != i)
+			{
+				GRAD_ItemGroup tmp = outGroups[i];
+				outGroups[i] = outGroups[min];
+				outGroups[min] = tmp;
+			}
+		}
+
+		// Sort items within each group by display name.
+		foreach (GRAD_ItemGroup group : outGroups)
+			m_Sorter.Sort(group.m_aItems);
+
+		return outGroups.Count();
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! Case-insensitive substring match of the search term against the display name.
 	protected bool MatchesSearch(notnull GRAD_ArsenalItemRecord rec, string search)
 	{
@@ -141,5 +201,19 @@ class GRAD_ItemBrowser
 		needle.ToLower();
 
 		return name.Contains(needle);
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! One sub-group in the item list: a base-name header and the records (variants) under it.
+class GRAD_ItemGroup : Managed
+{
+	string m_sLabel;
+	ref array<ref GRAD_ArsenalItemRecord> m_aItems = {};
+
+	//------------------------------------------------------------------------------------------------
+	int GetCount()
+	{
+		return m_aItems.Count();
 	}
 }

@@ -65,7 +65,15 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected const ResourceName QTY_ROW_LAYOUT = "{A704EDAAAADC6AD9}UI/Layouts/GRAD_ListQtyRow.layout";
 
 	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
+	// m_aRowHandlers: category-rail handlers (built once). m_aItemRowHandlers: item-list handlers,
+	// rebuilt on every PopulateItems — MUST be cleared each rebuild, else stale handlers keep
+	// invokers bound to destroyed widgets and the menu crashes when one fires.
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aRowHandlers = {};
+	protected ref array<ref GRAD_ArsenalRowHandler> m_aItemRowHandlers = {};
+
+	// Expansion state of base-name sub-groups in the item list, keyed by group label. Default
+	// collapsed; persists across re-populates so toggling one group doesn't reset the others.
+	protected ref map<string, bool> m_mExpandedGroups = new map<string, bool>();
 
 	//------------------------------------------------------------------------------------------------
 	//! Stash the context that the next OpenMenu(GRAD_ArsenalMenu) call should pick up.
@@ -353,6 +361,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (!m_wItemList || !m_Browser)
 			return;
 
+		// Drop the previous item-list handlers BEFORE destroying their widgets, so no stale handler
+		// keeps an invoker bound to a freed widget (that crashes the menu on the next click).
+		m_aItemRowHandlers.Clear();
 		ClearChildren(m_wItemList);
 
 		int activeType = m_Browser.GetActiveCategory();
@@ -365,42 +376,175 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			GRAD_ArsenalRowHandler eh = new GRAD_ArsenalRowHandler(this, emptyRow);
 			eh.m_bIsEmptyRow = true;
 			eh.m_iActiveCategoryType = activeType;
-			m_aRowHandlers.Insert(eh);
+			m_aItemRowHandlers.Insert(eh);
 		}
 
-		array<ref GRAD_ArsenalItemRecord> records = {};
-		m_Browser.GetFiltered(records);
+		// Build the grouped (by base name) list. A group with one item renders as a plain row; a
+		// group with several renders a collapsible header + (when expanded) its variant rows.
+		array<ref GRAD_ItemGroup> groups = {};
+		m_Browser.GetGrouped(groups);
 
-		foreach (GRAD_ArsenalItemRecord rec : records)
+		foreach (GRAD_ItemGroup group : groups)
 		{
-			if (!rec)
+			if (!group || group.GetCount() == 0)
 				continue;
 
-			if (stackable)
-				CreateQuantityRow(rec);
-			else
-				CreateItemRow(rec);
+			if (group.GetCount() == 1)
+			{
+				// Single variant: no point in a collapsible header — show the item directly.
+				CreateRecordRow(group.m_aItems[0], stackable);
+				continue;
+			}
+
+			bool expanded = IsGroupExpanded(group.m_sLabel);
+			CreateGroupHeaderRow(group, expanded);
+
+			if (expanded)
+			{
+				foreach (GRAD_ArsenalItemRecord rec : group.m_aItems)
+					CreateRecordRow(rec, stackable, true);
+			}
 		}
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Plain click-to-equip row for a single-slot item.
-	protected void CreateItemRow(notnull GRAD_ArsenalItemRecord rec)
+	//! Render one record as either a quantity row (stackable category) or a plain equip row.
+	//! `indented` true means the row sits under an expanded group header — show only the variant
+	//! suffix (the base name is already on the header) and prefix a marker for hierarchy.
+	protected void CreateRecordRow(GRAD_ArsenalItemRecord rec, bool stackable, bool indented = false)
 	{
-		Widget row = CreateRow(m_wItemList, rec.m_sDisplayName);
+		if (!rec)
+			return;
+
+		string rowLabel = rec.m_sDisplayName;
+		if (indented)
+		{
+			string variant = ConciseVariant(rec);
+			if (GRAD_CommonUtils.IsBlank(variant))
+				variant = rec.m_sDisplayName;
+			rowLabel = "   " + variant;	// indent under the header
+		}
+
+		if (stackable)
+			CreateQuantityRow(rec, rowLabel);
+		else
+			CreateItemRow(rec, rowLabel);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! A concise variant label for a child row: the friendly prefab stem with the base-name words and
+	//! a leading generic noun (Rifle/Pistol/Magazine/Box/Optic/Vest/Jacket/Hat/Helmet/Backpack...)
+	//! removed, so "Rifle M21 ARTII OliveGreen Sand Stripes" under base "M21 SWS" reads "ARTII
+	//! OliveGreen Sand Stripes". Falls back to the full suffix if everything got stripped.
+	protected string ConciseVariant(notnull GRAD_ArsenalItemRecord rec)
+	{
+		string suffix = rec.m_sVariantSuffix;
+		if (GRAD_CommonUtils.IsBlank(suffix))
+			return string.Empty;
+
+		array<string> words = {};
+		suffix.Split(" ", words, true);
+
+		// Base-name words to drop wherever they appear.
+		array<string> baseWords = {};
+		rec.m_sBaseName.Split(" ", baseWords, true);
+
+		// Generic leading nouns to drop.
+		string generics = " rifle pistol smg launcher gun magazine box belt ammo optic scope suppressor flashhider bayonet ugl vest jacket hat helmet cap backpack pants boots gloves shirt suit grenade smoke mine ";
+
+		string result = "";
+		foreach (string w : words)
+		{
+			string wl = w;
+			wl.ToLower();
+
+			// Skip base-name words.
+			bool drop = false;
+			foreach (string bw : baseWords)
+			{
+				string bwl = bw;
+				bwl.ToLower();
+				if (wl == bwl)
+				{
+					drop = true;
+					break;
+				}
+			}
+			// Skip a generic noun (only meaningful as a leading category word; cheap to drop anywhere).
+			if (!drop && generics.Contains(" " + wl + " "))
+				drop = true;
+
+			if (drop)
+				continue;
+
+			if (result != "")
+				result += " ";
+			result += w;
+		}
+
+		return result;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether a base-name group is currently expanded (default collapsed).
+	protected bool IsGroupExpanded(string label)
+	{
+		bool expanded = false;
+		m_mExpandedGroups.Find(label, expanded);
+		return expanded;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Collapsible header row: "▶ Label (N)" collapsed / "▼ Label (N)" expanded. Clicking toggles.
+	protected void CreateGroupHeaderRow(notnull GRAD_ItemGroup group, bool expanded)
+	{
+		string arrow;
+		if (expanded)
+			arrow = "[-]";
+		else
+			arrow = "[+]";
+
+		string label = string.Format("%1 %2 (%3)", arrow, group.m_sLabel, group.GetCount());
+		Widget row = CreateRow(m_wItemList, label);
+		if (!row)
+			return;
+
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+		handler.m_bIsGroupHeader = true;
+		handler.m_sGroupKey = group.m_sLabel;
+		m_aItemRowHandlers.Insert(handler);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Toggle a group's expansion and rebuild the list.
+	void OnGroupHeaderClicked(string groupKey)
+	{
+		m_mExpandedGroups.Set(groupKey, !IsGroupExpanded(groupKey));
+		PopulateItems();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Plain click-to-equip row for a single-slot item.
+	protected void CreateItemRow(notnull GRAD_ArsenalItemRecord rec, string labelOverride = string.Empty)
+	{
+		string label = labelOverride;
+		if (GRAD_CommonUtils.IsBlank(label))
+			label = rec.m_sDisplayName;
+
+		Widget row = CreateRow(m_wItemList, label);
 		if (!row)
 			return;
 
 		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
 		handler.m_Record = rec;
 		handler.m_bIsCategory = false;
-		m_aRowHandlers.Insert(handler);
+		m_aItemRowHandlers.Insert(handler);
 	}
 
 	//------------------------------------------------------------------------------------------------
 	//! Quantity row (label + [-] N [+]) for a stackable item. Shows the count currently on the
 	//! preview character so the GM sees how many will be applied.
-	protected void CreateQuantityRow(notnull GRAD_ArsenalItemRecord rec)
+	protected void CreateQuantityRow(notnull GRAD_ArsenalItemRecord rec, string labelOverride = string.Empty)
 	{
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (!workspace)
@@ -410,9 +554,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (!row)
 			return;
 
+		string labelText = labelOverride;
+		if (GRAD_CommonUtils.IsBlank(labelText))
+			labelText = rec.m_sDisplayName;
+
 		TextWidget label = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_LABEL));
 		if (label)
-			label.SetText(rec.m_sDisplayName);
+			label.SetText(labelText);
 
 		TextWidget count = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_COUNT));
 		if (count)
@@ -425,7 +573,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row, false);
 		handler.m_Record = rec;
 		handler.BindQuantityButtons(row, WIDGET_QTY_MINUS, WIDGET_QTY_PLUS, WIDGET_QTY_COUNT);
-		m_aRowHandlers.Insert(handler);
+		m_aItemRowHandlers.Insert(handler);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -757,6 +905,8 @@ class GRAD_ArsenalRowHandler
 	bool m_bIsCategory;					//!< category-rail row
 	bool m_bIsEmptyRow;					//!< the "[ Empty ]" row that clears the active category
 	int m_iActiveCategoryType;			//!< category type bit this row's [Empty] should clear
+	bool m_bIsGroupHeader;				//!< collapsible base-name group header row
+	string m_sGroupKey;					//!< group label this header toggles (when m_bIsGroupHeader)
 
 	//! For quantity rows: the count label to refresh after +/- (null on plain rows).
 	TextWidget m_wCountLabel;
@@ -797,7 +947,9 @@ class GRAD_ArsenalRowHandler
 		if (!m_Menu)
 			return;
 
-		if (m_bIsEmptyRow)
+		if (m_bIsGroupHeader)
+			m_Menu.OnGroupHeaderClicked(m_sGroupKey);
+		else if (m_bIsEmptyRow)
 			m_Menu.OnEmptyRowClicked(m_iActiveCategoryType);
 		else if (m_bIsCategory)
 			m_Menu.SelectCategoryByIndex(m_iCategoryIndex);
