@@ -58,7 +58,7 @@ FrameWidgetClass {
     OffsetBottom -220
    }
    {
-    VerticalLayoutWidgetClass "{00F6B11784CDB106}" {
+    GridLayoutWidgetClass "{00F6B11784CDB106}" {
      Name "ItemList"
     }
    }

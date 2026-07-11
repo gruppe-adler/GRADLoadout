@@ -96,7 +96,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 	// Item card layout (icon + name + count/weight). GUID assigned by Workbench on import; the
 	// placeholder here is replaced when the layout is registered.
-	protected const ResourceName CARD_LAYOUT = "{A704EDAAAADC6ADA}UI/Layouts/GRAD_ItemCard.layout";
+	protected const ResourceName CARD_LAYOUT = "{A704EDAAAADC6ADB}UI/Layouts/GRAD_ItemCard.layout";
 
 	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
 	// m_aRowHandlers: category-rail handlers (built once). m_aItemRowHandlers: item-list handlers,
@@ -115,6 +115,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	// prefab -> count on the preview, recomputed once per PopulateItems (walking the whole inventory
 	// per card was O(cards x items) and made the grid sluggish).
 	protected ref map<ResourceName, int> m_mPreviewCounts = new map<ResourceName, int>();
+
+	// Item grid wrap: cards flow left-to-right into GRID_COLUMNS columns, wrapping to the next row.
+	// GridLayoutWidget does not auto-wrap, so we place each card at (cell % cols, cell / cols).
+	protected const int GRID_COLUMNS = 2;
+	protected int m_iGridCell;
 
 	//------------------------------------------------------------------------------------------------
 	//! Stash the context that the next OpenMenu(GRAD_ArsenalMenu) call should pick up.
@@ -222,8 +227,10 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (m_sPreviewPrefab != ResourceName.Empty && m_PreviewManager)
 		{
 			// One persistent attributes object; the manager renders from it and the helper mutates it
-			// from mouse input. (Base PreviewRenderAttributes so it matches Update's inout param type.)
-			m_PreviewAttribs = new PreviewRenderAttributes();
+			// from mouse input. MUST be the CHARACTER subclass — a bare PreviewRenderAttributes has no
+			// character framing, so the camera sits inside the mesh (extreme zoom) and drag does nothing.
+			// Field stays typed as base PreviewRenderAttributes to match Update(inout ...).
+			m_PreviewAttribs = new SCR_CharacterInventoryPreviewAttributes();
 
 			// Spawn a local clone and bind it to the widget — this is the render path that actually shows
 			// the character (the from-prefab/resolve path rendered blank). Despawn is mitigated by
@@ -426,6 +433,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (m_Browser)
 			m_Browser.SetCategoryMask(GRAD_ArsenalTabs.MaskFor(tabIndex));
 
+		GRAD_Log.Info(string.Format("SelectTab %1 mask=%2 catListFound=%3",
+			tabIndex, GRAD_ArsenalTabs.MaskFor(tabIndex), m_wCategoryList != null));
+
 		PopulateItems();
 	}
 
@@ -441,6 +451,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		// invoker bound to a freed widget (that crashes the menu on the next click).
 		m_aItemRowHandlers.Clear();
 		ClearChildren(m_wItemList);
+		m_iGridCell = 0;	// reset the grid wrap counter for this rebuild
 
 		// Precompute prefab->count over the preview once (cheap map), so each card is O(1) not O(items).
 		RebuildPreviewCounts();
@@ -590,12 +601,12 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, card);
 		handler.m_Record = rec;
 		handler.m_bIsCategory = false;
+		handler.m_bBoundOk = SCR_InputButtonComponent.FindComponent(card) != null;	// diag
 		m_aItemRowHandlers.Insert(handler);
 	}
 
-	//------------------------------------------------------------------------------------------------
-	//! Build a card widget from GRAD_ItemCard.layout under the item grid: sets the icon (from uiInfo,
-	//! when present), the name, and the two small stat texts. Returns the card root widget (a button).
+	//! Build an icon tile card from GRAD_ItemCard.layout and place it in the next grid cell (wrapping
+	//! into GRID_COLUMNS columns). Fills the icon (from uiInfo), name, and count child widgets.
 	protected Widget CreateItemCardWidget(string name, string count, string weight, SCR_UIInfo uiInfo)
 	{
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
@@ -606,6 +617,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (!card)
 			return null;
 
+		// Wrap into a grid: place at (cell % cols, cell / cols), then advance.
+		GridSlot.SetColumn(card, m_iGridCell % GRID_COLUMNS);
+		GridSlot.SetRow(card, m_iGridCell / GRID_COLUMNS);
+		m_iGridCell++;
+
 		TextWidget nameW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_NAME));
 		if (nameW)
 			nameW.SetText(name);
@@ -613,10 +629,6 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		TextWidget countW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_COUNT));
 		if (countW)
 			countW.SetText(count);
-
-		TextWidget weightW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_WEIGHT));
-		if (weightW)
-			weightW.SetText(weight);
 
 		ImageWidget iconW = ImageWidget.Cast(card.FindAnyWidget(WIDGET_CARD_ICON));
 		if (iconW)
@@ -635,6 +647,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! for the containers that currently exist on the preview and have room.
 	void OnItemRowClicked(GRAD_ArsenalItemRecord record)
 	{
+		string nm = "<null>";
+		if (record)
+			nm = record.m_sDisplayName;
+		GRAD_Log.Info("OnItemRowClicked: " + nm);	// diag
+
 		m_SelectedRecord = record;
 		RefreshSelectedPanel();
 	}
@@ -1165,6 +1182,7 @@ class GRAD_ArsenalRowHandler
 	bool m_bIsCategory;					//!< top-tab button
 	bool m_bIsGroupHeader;				//!< collapsible base-name group header card
 	string m_sGroupKey;					//!< group label this header toggles (when m_bIsGroupHeader)
+	bool m_bBoundOk;					//!< diag: was an input button component found to bind
 
 	//------------------------------------------------------------------------------------------------
 	//! Binds the widget's single SCR_InputButtonComponent to OnActivated.

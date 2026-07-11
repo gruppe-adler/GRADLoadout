@@ -1,48 +1,78 @@
-ButtonWidgetClass "{593C3A41B9D8A4D0}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+OverlayWidgetClass {
  Name "ItemCard"
  {
-  components {
-   SCR_InputButtonComponent "{622A3A0A9EED6D00}" {
-    m_sActionName "MenuSelect"
+  SizeLayoutWidgetClass "{A0000000000000A1}" {
+   Name "TileSize"
+   Slot OverlayWidgetSlot "{A0000000000000A2}" {
+    HorizontalAlign 3
+    VerticalAlign 3
+   }
+   AllowWidthOverride 1
+   AllowHeightOverride 1
+   WidthOverride 150
+   HeightOverride 116
+   MinDesiredWidth 150
+   MinDesiredHeight 116
+   MaxDesiredWidth 150
+   MaxDesiredHeight 116
+   {
+    OverlayWidgetClass "{A0000000000000B3}" {
+     Name "TileStack"
+     {
+      ImageWidgetClass "{A0000000000000B5}" {
+       Name "TileBg"
+       Slot OverlayWidgetSlot "{A0000000000000B6}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+       }
+       Color 0.1 0.11 0.13 0.9
+      }
+      VerticalLayoutWidgetClass "{A0000000000000A3}" {
+       Name "TileContent"
+       Slot OverlayWidgetSlot "{A0000000000000B7}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+       }
+       {
+        ImageWidgetClass "{A0000000000000A4}" {
+         Name "CardIcon"
+         Slot LayoutSlot "{A0000000000000A5}" {
+          Padding 6 6 6 2
+         }
+         Color 1 1 1 1
+        }
+        TextWidgetClass "{A0000000000000A6}" {
+         Name "CardName"
+         Slot LayoutSlot "{A0000000000000A7}" {
+          Padding 4 0 4 0
+         }
+         Text ""
+         "Horizontal Alignment" Center
+        }
+        TextWidgetClass "{A0000000000000A8}" {
+         Name "CardCount"
+         Slot LayoutSlot "{A0000000000000A9}" {
+          Padding 4 0 4 4
+         }
+         Text ""
+         "Horizontal Alignment" Center
+        }
+       }
+      }
+     }
+    }
    }
   }
-  OverlayWidgetClass "{A1B2C3D4E5F70001}" {
-   Name "CardBody"
-   Slot LayoutSlot "{A1B2C3D4E5F70002}" {
-    Padding 4 4 4 4
+  ButtonWidgetClass "{A0000000000000B0}" {
+   Name "CardButton"
+   Slot OverlayWidgetSlot "{A0000000000000B1}" {
+    HorizontalAlign 3
+    VerticalAlign 3
    }
-   {
-    ImageWidgetClass "{A1B2C3D4E5F70003}" {
-     Name "CardIcon"
-     Slot OverlaySlot "{A1B2C3D4E5F70004}" {
-      HorizontalAlign Left
-      VerticalAlign Top
-     }
-     Color 1 1 1 1
-    }
-    TextWidgetClass "{A1B2C3D4E5F70005}" {
-     Name "CardName"
-     Slot OverlaySlot "{A1B2C3D4E5F70006}" {
-      HorizontalAlign Left
-      VerticalAlign Bottom
-     }
-     Text "Item"
-    }
-    TextWidgetClass "{A1B2C3D4E5F70007}" {
-     Name "CardCount"
-     Slot OverlaySlot "{A1B2C3D4E5F70008}" {
-      HorizontalAlign Right
-      VerticalAlign Top
-     }
-     Text ""
-    }
-    TextWidgetClass "{A1B2C3D4E5F70009}" {
-     Name "CardWeight"
-     Slot OverlaySlot "{A1B2C3D4E5F7000A}" {
-      HorizontalAlign Right
-      VerticalAlign Bottom
-     }
-     Text ""
+   style blank
+   components {
+    SCR_InputButtonComponent "{A0000000000000B2}" {
+     m_sActionName "MenuSelect"
     }
    }
   }

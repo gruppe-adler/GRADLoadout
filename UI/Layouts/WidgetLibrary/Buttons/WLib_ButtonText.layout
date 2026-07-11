@@ -1,4 +1,4 @@
-ButtonWidgetClass "{69995B1FA56655C8}" {
+ButtonWidgetClass {
  Name "Button"
  Clipping False
  components {
