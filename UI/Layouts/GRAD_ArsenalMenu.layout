@@ -5,105 +5,211 @@ FrameWidgetClass {
    Name "Background"
    Slot FrameWidgetSlot "{34CED9596258C8AE}" {
     Anchor 0 0 1 1
-    PositionX 0
     OffsetLeft 0
-    PositionY 0
     OffsetTop 0
-    SizeX 0
     OffsetRight 0
-    SizeY 0
     OffsetBottom 0
    }
-   Color 0.02 0.02 0.03 0.88
+   Color 0.02 0.02 0.03 0.9
   }
   TextWidgetClass "{23B7B4E324FF39F3}" {
    Name "Title"
    Slot FrameWidgetSlot "{10895B2F4F1AFBF8}" {
     Anchor 0 0 1 0
-    PositionX 40
     OffsetLeft 40
-    PositionY 24
-    OffsetTop 24
+    OffsetTop 0
     SizeX -80
-    OffsetRight 0
-    SizeY 40
-    OffsetBottom 0
+    OffsetRight -100
+    SizeY 50
+    OffsetBottom -50
    }
-   Text "ARSENAL"
+   Text "ARSENAL MANAGER"
+   "Horizontal Alignment" Center
    "Vertical Alignment" Center
-   FontProperties FontProperties "{6698AD300F04B285}" {
-   }
   }
-  PanelWidgetClass "{2512F4AB6CC303A8}" {
-   Name "CategoryRail"
+  HorizontalLayoutWidgetClass "{2512F4AB6CC303A8}" {
+   Name "CategoryList"
    Slot FrameWidgetSlot "{441885F0C574F5D2}" {
-    Anchor 0 0 0 1
-    PositionX 40
+    Anchor 0 0 0 0
     OffsetLeft 40
-    PositionY 80
-    OffsetTop 80
-    SizeX 250
-    OffsetRight -290
-    SizeY -160
-    OffsetBottom 0
-   }
-   {
-    VerticalLayoutWidgetClass "{03C30940F00C5104}" {
-     Name "CategoryList"
-     Slot FrameWidgetSlot "{03C30940F00C5105}" {
-      Anchor 0 0 1 1
-      PositionX 0
-      OffsetLeft 0
-      PositionY 0
-      OffsetTop 0
-      SizeX 0
-      OffsetRight 0
-      SizeY 0
-      OffsetBottom 0
-     }
-    }
+    OffsetTop 72
+    SizeX 560
+    SizeY 56
    }
   }
   ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
    Name "PreviewCharacter"
    Slot FrameWidgetSlot "{392217F6C77B2E86}" {
-    Anchor 0 0 1 1
-    PositionX 296
-    OffsetLeft 296
-    PositionY 80
+    Anchor 0.35 0 0.72 1
+    OffsetLeft 0
     OffsetTop 80
-    SizeX -696
     OffsetRight 0
-    SizeY -160
-    OffsetBottom 0
+    OffsetBottom -80
    }
   }
-  PanelWidgetClass "{41F27C3A98AEAEF0}" {
+  ScrollLayoutWidgetClass "{41F27C3A98AEAEF0}" {
    Name "ItemListScroll"
    Slot FrameWidgetSlot "{3E6D7791BD5E4247}" {
-    Anchor 1 0 1 1
-    PositionX -400
-    OffsetLeft -400
-    PositionY 80
-    OffsetTop 80
-    SizeX 360
-    OffsetRight -40
-    SizeY -160
-    OffsetBottom 0
+    Anchor 0 0 0.34 1
+    OffsetLeft 40
+    OffsetTop 140
+    SizeX 0
+    OffsetRight -8
+    OffsetBottom -220
    }
    {
     VerticalLayoutWidgetClass "{00F6B11784CDB106}" {
      Name "ItemList"
-     Slot FrameWidgetSlot "{00F6B11784CDB107}" {
-      Anchor 0 0 1 1
-      PositionX 0
-      OffsetLeft 0
-      PositionY 0
-      OffsetTop 0
-      SizeX 0
-      OffsetRight 0
-      SizeY 0
-      OffsetBottom 0
+    }
+   }
+  }
+  OverlayWidgetClass "{11111111AAAA0001}" {
+   Name "SelectedPanel"
+   Slot FrameWidgetSlot "{11111111AAAA0002}" {
+    Anchor 0 1 0.34 1
+    OffsetLeft 40
+    OffsetTop -200
+    SizeX 0
+    OffsetRight -8
+    SizeY 180
+   }
+   {
+    ImageWidgetClass "{11111111AAAA0003}" {
+     Name "SelBg"
+     Color 0.08 0.08 0.1 0.9
+    }
+    ImageWidgetClass "{11111111AAAA0005}" {
+     Name "SelIcon"
+     Color 1 1 1 1
+    }
+    TextWidgetClass "{11111111AAAA0007}" {
+     Name "SelName"
+     Text ""
+    }
+    TextWidgetClass "{11111111AAAA0009}" {
+     Name "SelStats"
+     Text ""
+    }
+    VerticalLayoutWidgetClass "{11111111AAAA000B}" {
+     Name "SelButtons"
+     {
+      ButtonWidgetClass "{11111111AAAA000D}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+       Name "ButtonAddVest"
+       Slot LayoutSlot "{11111111AAAA000E}" {
+        Padding 2 2 2 2
+       }
+       components {
+        SCR_InputButtonComponent "{11111111AAAA000F}" {
+         m_sActionName "MenuSelect"
+        }
+       }
+      }
+      ButtonWidgetClass "{11111111AAAA0010}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+       Name "ButtonAddBackpack"
+       Slot LayoutSlot "{11111111AAAA0011}" {
+        Padding 2 2 2 2
+       }
+       components {
+        SCR_InputButtonComponent "{11111111AAAA0012}" {
+         m_sActionName "MenuSelect"
+        }
+       }
+      }
+      ButtonWidgetClass "{11111111AAAA0013}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+       Name "ButtonAddEquip"
+       Slot LayoutSlot "{11111111AAAA0014}" {
+        Padding 2 2 2 2
+       }
+       components {
+        SCR_InputButtonComponent "{11111111AAAA0015}" {
+         m_sActionName "MenuSelect"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  VerticalLayoutWidgetClass "{22222222BBBB0001}" {
+   Name "LoadoutPanel"
+   Slot FrameWidgetSlot "{22222222BBBB0002}" {
+    Anchor 0.74 0 1 1
+    OffsetLeft 8
+    OffsetTop 80
+    OffsetRight -40
+    OffsetBottom -80
+   }
+   {
+    TextWidgetClass "{22222222BBBB0010}" {
+     Name "UniformHeader"
+     Slot LayoutSlot "{22222222BBBB0011}" {
+      Padding 0 8 0 2
+     }
+     Text "UNIFORM"
+    }
+    ImageWidgetClass "{22222222BBBB0012}" {
+     Name "UniformBar"
+     Slot LayoutSlot "{22222222BBBB0013}" {
+     }
+     Color 0.35 0.7 1 1
+    }
+    TextWidgetClass "{22222222BBBB0014}" {
+     Name "UniformPercent"
+     Slot LayoutSlot "{22222222BBBB0015}" {
+     }
+     Text ""
+    }
+    VerticalLayoutWidgetClass "{22222222BBBB0016}" {
+     Name "UniformContents"
+     Slot LayoutSlot "{22222222BBBB0017}" {
+     }
+    }
+    TextWidgetClass "{22222222BBBB0020}" {
+     Name "VestHeader"
+     Slot LayoutSlot "{22222222BBBB0021}" {
+      Padding 0 12 0 2
+     }
+     Text "VEST"
+    }
+    ImageWidgetClass "{22222222BBBB0022}" {
+     Name "VestBar"
+     Slot LayoutSlot "{22222222BBBB0023}" {
+     }
+     Color 0.35 0.7 1 1
+    }
+    TextWidgetClass "{22222222BBBB0024}" {
+     Name "VestPercent"
+     Slot LayoutSlot "{22222222BBBB0025}" {
+     }
+     Text ""
+    }
+    VerticalLayoutWidgetClass "{22222222BBBB0026}" {
+     Name "VestContents"
+     Slot LayoutSlot "{22222222BBBB0027}" {
+     }
+    }
+    TextWidgetClass "{22222222BBBB0030}" {
+     Name "BackpackHeader"
+     Slot LayoutSlot "{22222222BBBB0031}" {
+      Padding 0 12 0 2
+     }
+     Text "BACKPACK"
+    }
+    ImageWidgetClass "{22222222BBBB0032}" {
+     Name "BackpackBar"
+     Slot LayoutSlot "{22222222BBBB0033}" {
+     }
+     Color 0.35 0.7 1 1
+    }
+    TextWidgetClass "{22222222BBBB0034}" {
+     Name "BackpackPercent"
+     Slot LayoutSlot "{22222222BBBB0035}" {
+     }
+     Text ""
+    }
+    VerticalLayoutWidgetClass "{22222222BBBB0036}" {
+     Name "BackpackContents"
+     Slot LayoutSlot "{22222222BBBB0037}" {
      }
     }
    }
@@ -112,9 +218,7 @@ FrameWidgetClass {
    Name "ButtonBar"
    Slot FrameWidgetSlot "{6334089205A39505}" {
     Anchor 1 1 1 1
-    PositionX -360
     OffsetLeft -360
-    PositionY -64
     OffsetTop -64
     SizeX 320
     OffsetRight -40

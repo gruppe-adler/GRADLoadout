@@ -37,16 +37,33 @@ class GRAD_ArsenalService : GenericEntity
 	//! Last loadout name the local player used, for the "load previous" quick action.
 	protected string m_sLastUsedLoadoutName;
 
+	//! On-screen "Preloading arsenal…" progress indicator, shown while the index builds.
+	protected ref GRAD_PreloadIndicator m_PreloadIndicator;
+
 	//------------------------------------------------------------------------------------------------
 	static GRAD_ArsenalService GetInstance()
 	{
 		return s_Instance;
 	}
 
+	//! Period (ms) of the build-driver timer. Small so the amortized build finishes quickly while
+	//! staying spread across ticks. The entity FRAME event proved unreliable for a script-spawned
+	//! service (it fired once then stopped), so the build is driven off the game callqueue instead.
+	protected const int BUILD_TICK_MS = 33;
+
 	//------------------------------------------------------------------------------------------------
 	void GRAD_ArsenalService(IEntitySource src, IEntity parent)
 	{
-		SetEventMask(EntityEvent.INIT | EntityEvent.FRAME);
+		SetEventMask(EntityEvent.INIT);
+
+		// [Attribute] defvalues only populate when the entity comes from a prefab/config. The preload
+		// spawns this service by CLASS (SpawnEntity(GRAD_ArsenalService)), where attributes stay at
+		// type defaults (0 / false) — which left m_bAutoBuildIndex false and the build never started.
+		// Seed sane runtime defaults in the constructor so a bare-spawned service still builds; a placed
+		// prefab still overrides these via its attribute values after construction.
+		if (m_iEntriesPerFrame <= 0)
+			m_iEntriesPerFrame = 64;
+		m_bAutoBuildIndex = true;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -63,55 +80,87 @@ class GRAD_ArsenalService : GenericEntity
 
 		GRAD_Log.Info("GRAD_ArsenalService: initialized");
 
+		// Drive the build + indicator off the game callqueue (reliable, unlike the entity FRAME event
+		// for a script-spawned entity). The driver kicks BeginBuild once catalogs are ready, ticks the
+		// amortized build, updates the preload bar, and stops itself when complete.
 		if (m_bAutoBuildIndex)
-			TryBeginIndexBuild();
+			GetGame().GetCallqueue().CallLater(GradBuildDriver, BUILD_TICK_MS, true);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Begin the catalog build now if catalogs are ready; otherwise wait for the catalog-init
-	//! invoker and build then.
-	void TryBeginIndexBuild()
+	//! Repeating callqueue driver: start the build when catalogs are ready, tick it, update the bar,
+	//! and stop once the index is complete.
+	protected int m_iGradDriverTicks;
+
+	protected void GradBuildDriver()
+	{
+		// One-shot proof the driver fires + state snapshot.
+		if (m_iGradDriverTicks == 0)
+			GRAD_Log.Info(string.Format("BuildDriver first tick: catalogMgr=%1",
+				SCR_EntityCatalogManagerComponent.GetInstance() != null));
+		m_iGradDriverTicks++;
+
+		if (!m_CatalogIndex)
+		{
+			GetGame().GetCallqueue().Remove(GradBuildDriver);
+			return;
+		}
+
+		if (m_CatalogIndex.IsComplete())
+		{
+			UpdatePreloadIndicator();
+			GetGame().GetCallqueue().Remove(GradBuildDriver);
+			return;
+		}
+
+		if (!m_CatalogIndex.IsBuilding() && SCR_EntityCatalogManagerComponent.GetInstance())
+			m_CatalogIndex.BeginBuild();
+
+		if (m_CatalogIndex.IsBuilding())
+			m_CatalogIndex.Tick();
+
+		UpdatePreloadIndicator();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Show a small "Preloading arsenal…" bar while the index builds; tear it down once complete.
+	protected void UpdatePreloadIndicator()
 	{
 		if (!m_CatalogIndex)
 			return;
 
-		if (SCR_EntityCatalogManagerComponent.GetInstance())
+		if (m_CatalogIndex.IsComplete())
 		{
-			m_CatalogIndex.BeginBuild();
+			if (m_PreloadIndicator)
+			{
+				m_PreloadIndicator.Destroy();
+				m_PreloadIndicator = null;
+			}
 			return;
 		}
 
-		// Catalogs not ready yet — subscribe to the init event and build when it fires.
-		ScriptInvokerVoid invoker = SCR_EntityCatalogManagerComponent.GetOnEntityCatalogInitialized();
-		if (invoker)
-			invoker.Insert(OnCatalogsReady);
-		else
-			GRAD_Log.Warn("GRAD_ArsenalService: catalogs not ready and no init invoker available");
-	}
-
-	//------------------------------------------------------------------------------------------------
-	protected void OnCatalogsReady()
-	{
-		ScriptInvokerVoid invoker = SCR_EntityCatalogManagerComponent.GetOnEntityCatalogInitialized();
-		if (invoker)
-			invoker.Remove(OnCatalogsReady);
-
-		if (m_CatalogIndex)
-			m_CatalogIndex.BeginBuild();
-	}
-
-	//------------------------------------------------------------------------------------------------
-	override void EOnFrame(IEntity owner, float timeSlice)
-	{
-		// Drive the amortized catalog build. Cheap no-op once complete / when idle.
-		if (m_CatalogIndex && m_CatalogIndex.IsBuilding())
-			m_CatalogIndex.Tick();
+		// Building (or about to): make sure the indicator exists and reflects progress.
+		if (m_CatalogIndex.IsBuilding())
+		{
+			if (!m_PreloadIndicator)
+				m_PreloadIndicator = new GRAD_PreloadIndicator();
+			m_PreloadIndicator.Update(m_CatalogIndex.GetProgress());
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
 	GRAD_CatalogIndex GetCatalogIndex()
 	{
 		return m_CatalogIndex;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True once the catalog index has finished its amortized build — i.e. the arsenal is ready to
+	//! open with a fully-populated item browser. Entry points (GM action, arsenal box) gate their
+	//! availability on this so the "Open Arsenal" button only appears after preload completes.
+	bool IsCatalogReady()
+	{
+		return m_CatalogIndex && m_CatalogIndex.IsComplete();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -151,6 +200,15 @@ class GRAD_ArsenalService : GenericEntity
 	//------------------------------------------------------------------------------------------------
 	void ~GRAD_ArsenalService()
 	{
+		if (GetGame() && GetGame().GetCallqueue())
+			GetGame().GetCallqueue().Remove(GradBuildDriver);
+
+		if (m_PreloadIndicator)
+		{
+			m_PreloadIndicator.Destroy();
+			m_PreloadIndicator = null;
+		}
+
 		if (s_Instance == this)
 			s_Instance = null;
 	}

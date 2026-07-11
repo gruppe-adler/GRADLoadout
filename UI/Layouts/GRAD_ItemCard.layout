@@ -1,0 +1,50 @@
+ButtonWidgetClass "{593C3A41B9D8A4D0}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+ Name "ItemCard"
+ {
+  components {
+   SCR_InputButtonComponent "{622A3A0A9EED6D00}" {
+    m_sActionName "MenuSelect"
+   }
+  }
+  OverlayWidgetClass "{A1B2C3D4E5F70001}" {
+   Name "CardBody"
+   Slot LayoutSlot "{A1B2C3D4E5F70002}" {
+    Padding 4 4 4 4
+   }
+   {
+    ImageWidgetClass "{A1B2C3D4E5F70003}" {
+     Name "CardIcon"
+     Slot OverlaySlot "{A1B2C3D4E5F70004}" {
+      HorizontalAlign Left
+      VerticalAlign Top
+     }
+     Color 1 1 1 1
+    }
+    TextWidgetClass "{A1B2C3D4E5F70005}" {
+     Name "CardName"
+     Slot OverlaySlot "{A1B2C3D4E5F70006}" {
+      HorizontalAlign Left
+      VerticalAlign Bottom
+     }
+     Text "Item"
+    }
+    TextWidgetClass "{A1B2C3D4E5F70007}" {
+     Name "CardCount"
+     Slot OverlaySlot "{A1B2C3D4E5F70008}" {
+      HorizontalAlign Right
+      VerticalAlign Top
+     }
+     Text ""
+    }
+    TextWidgetClass "{A1B2C3D4E5F70009}" {
+     Name "CardWeight"
+     Slot OverlaySlot "{A1B2C3D4E5F7000A}" {
+      HorizontalAlign Right
+      VerticalAlign Bottom
+     }
+     Text ""
+    }
+   }
+  }
+ }
+}

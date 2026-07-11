@@ -15,7 +15,8 @@ class GRAD_ItemBrowser
 	protected ref array<int> m_aCategoryTypes;
 
 	//! Active filters.
-	protected int m_iCategoryType = -1;		//!< -1 = all categories
+	protected int m_iCategoryType = -1;		//!< -1 = all categories (single-type mode)
+	protected int m_iCategoryMask = 0;		//!< 0 = mask mode off; else show records whose type bit is set
 	protected string m_sFactionKey;			//!< empty = all factions
 	protected string m_sSearch;				//!< empty = no text filter
 
@@ -68,10 +69,19 @@ class GRAD_ItemBrowser
 	// ---- filter setters -------------------------------------------------------------------------
 	//------------------------------------------------------------------------------------------------
 
-	//! Set the active category by arsenal-type value (-1 = all).
+	//! Set the active category by arsenal-type value (-1 = all). Clears mask mode.
 	void SetCategory(int arsenalType)
 	{
 		m_iCategoryType = arsenalType;
+		m_iCategoryMask = 0;
+	}
+
+	//! Set the active category by a BIT MASK of arsenal types (the 5-tab model): records whose
+	//! m_iArsenalType has any bit in the mask pass. 0 disables mask mode. Clears single-type mode.
+	void SetCategoryMask(int mask)
+	{
+		m_iCategoryMask = mask;
+		m_iCategoryType = -1;
 	}
 
 	//! Set the active category by index into GetCategoryTypes() (-1 = all).
@@ -112,8 +122,16 @@ class GRAD_ItemBrowser
 			if (!rec)
 				continue;
 
-			if (m_iCategoryType != -1 && rec.m_iArsenalType != m_iCategoryType)
+			if (m_iCategoryMask != 0)
+			{
+				// Mask (5-tab) mode: pass if the record's type bit is in the mask.
+				if ((rec.m_iArsenalType & m_iCategoryMask) == 0)
+					continue;
+			}
+			else if (m_iCategoryType != -1 && rec.m_iArsenalType != m_iCategoryType)
+			{
 				continue;
+			}
 
 			if (!GRAD_CommonUtils.IsBlank(m_sFactionKey)
 				&& !GRAD_CommonUtils.IsBlank(rec.m_sFactionKey)

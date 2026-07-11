@@ -21,19 +21,41 @@ modded enum ChimeraMenuPreset
 //! Opened with a GRAD_ArsenalMenuContext (set just before OpenMenu) describing the target(s).
 class GRAD_ArsenalMenu : ChimeraMenuBase
 {
-	// Widget names expected in the layout (UI/Layouts/Arsenal/GRAD_ArsenalMenu.layout).
+	// Widget names expected in the layout (UI/Layouts/GRAD_ArsenalMenu.layout).
 	protected const string WIDGET_PREVIEW			= "PreviewCharacter";
-	protected const string WIDGET_CATEGORY_LIST		= "CategoryList";
-	protected const string WIDGET_ITEM_LIST			= "ItemList";
+	protected const string WIDGET_CATEGORY_LIST		= "CategoryList";	// the 5-tab bar
+	protected const string WIDGET_ITEM_LIST			= "ItemList";		// the card grid container
 	protected const string WIDGET_BTN_OK			= "ButtonOK";
 	protected const string WIDGET_BTN_CANCEL		= "ButtonCancel";
 	protected const string WIDGET_TITLE				= "Title";
 
-	// Widget names inside the quantity row layout (UI/Layouts/GRAD_ListQtyRow.layout).
-	protected const string WIDGET_QTY_LABEL			= "Label";
-	protected const string WIDGET_QTY_COUNT			= "Count";
-	protected const string WIDGET_QTY_MINUS			= "ButtonMinus";
-	protected const string WIDGET_QTY_PLUS			= "ButtonPlus";
+	// Item card child widget names (UI/Layouts/GRAD_ItemCard.layout).
+	protected const string WIDGET_CARD_ICON			= "CardIcon";
+	protected const string WIDGET_CARD_NAME			= "CardName";
+	protected const string WIDGET_CARD_COUNT		= "CardCount";
+	protected const string WIDGET_CARD_WEIGHT		= "CardWeight";
+
+	// Selected-item panel widget names.
+	protected const string WIDGET_SEL_ICON			= "SelIcon";
+	protected const string WIDGET_SEL_NAME			= "SelName";
+	protected const string WIDGET_SEL_STATS			= "SelStats";
+	protected const string WIDGET_BTN_ADD_VEST		= "ButtonAddVest";
+	protected const string WIDGET_BTN_ADD_BACKPACK	= "ButtonAddBackpack";
+	protected const string WIDGET_BTN_ADD_EQUIP		= "ButtonAddEquip";
+
+	// Right loadout panel slot widget names (Uniform / Vest / Backpack: bar, percent, contents).
+	protected const string WIDGET_SLOT_UNIFORM_BAR		= "UniformBar";
+	protected const string WIDGET_SLOT_UNIFORM_PCT		= "UniformPercent";
+	protected const string WIDGET_SLOT_UNIFORM_CONTENTS	= "UniformContents";
+	protected const string WIDGET_SLOT_VEST_BAR			= "VestBar";
+	protected const string WIDGET_SLOT_VEST_PCT			= "VestPercent";
+	protected const string WIDGET_SLOT_VEST_CONTENTS	= "VestContents";
+	protected const string WIDGET_SLOT_BACKPACK_BAR		= "BackpackBar";
+	protected const string WIDGET_SLOT_BACKPACK_PCT		= "BackpackPercent";
+	protected const string WIDGET_SLOT_BACKPACK_CONTENTS = "BackpackContents";
+
+	// Pixel width of a full fill bar (the bar image's max width in the layout).
+	protected const float BAR_FULL_WIDTH = 220;
 
 	// Runtime context (target entities, permission hint) set before the menu opens.
 	protected static ref GRAD_ArsenalMenuContext s_PendingContext;
@@ -46,6 +68,16 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected ItemPreviewManagerEntity m_PreviewManager;
 	protected ref SCR_InventoryCharacterWidgetHelper m_PreviewCameraHelper;
 
+	// Persistent preview-camera render attributes. The SAME instance must be handed to every
+	// SetPreviewItem* call AND fed to the helper's Update() each frame, so mouse drag-rotate / zoom
+	// accumulate into the object the preview manager renders from. Declared as the BASE type so it can
+	// pass to Update(inout PreviewRenderAttributes) (inout requires an exact type match), but
+	// INSTANTIATED as the character subclass (a bare PreviewRenderAttributes renders nothing).
+	protected ref PreviewRenderAttributes m_PreviewAttribs;
+
+	// The prefab the engine-managed preview entity was resolved from (for re-resolve after edits).
+	protected ResourceName m_sPreviewPrefab;
+
 	// Entities created on the preview character by the last apply (for cleanup).
 	protected ref array<IEntity> m_aPreviewCreated = {};
 
@@ -53,16 +85,18 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected int m_iSelectedCategory = -1;
 
 	// Item browser (query/grouping over the catalog index) + the container widgets it fills.
+	// m_wCategoryList is the horizontal tab bar; m_wItemList is the vertical card grid container.
+	// Both stored as base Widget so the layout can use whichever layout-widget subclass it wants.
 	protected ref GRAD_ItemBrowser m_Browser;
-	protected VerticalLayoutWidget m_wCategoryList;
-	protected VerticalLayoutWidget m_wItemList;
+	protected Widget m_wCategoryList;
+	protected Widget m_wItemList;
 
-	// Row button layout (vanilla text button + our SCR_InputButtonComponent).
+	// Tab button layout (vanilla text button + our SCR_InputButtonComponent).
 	protected const ResourceName ROW_LAYOUT = "{4BE35AEBB44455F0}UI/Layouts/GRAD_ListButtonRow.layout";
 
-	// Quantity row layout (label + [-] count [+]) for stackable categories. GUID filled in after the
-	// layout is authored + registered via wb_resources.
-	protected const ResourceName QTY_ROW_LAYOUT = "{A704EDAAAADC6AD9}UI/Layouts/GRAD_ListQtyRow.layout";
+	// Item card layout (icon + name + count/weight). GUID assigned by Workbench on import; the
+	// placeholder here is replaced when the layout is registered.
+	protected const ResourceName CARD_LAYOUT = "{A704EDAAAADC6ADA}UI/Layouts/GRAD_ItemCard.layout";
 
 	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
 	// m_aRowHandlers: category-rail handlers (built once). m_aItemRowHandlers: item-list handlers,
@@ -71,15 +105,16 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aRowHandlers = {};
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aItemRowHandlers = {};
 
-	// Expansion state of base-name sub-groups in the item list, keyed by group label. Default
+	// Expansion state of base-name sub-groups in the item grid, keyed by group label. Default
 	// collapsed; persists across re-populates so toggling one group doesn't reset the others.
 	protected ref map<string, bool> m_mExpandedGroups = new map<string, bool>();
 
-	// Destination container selection (stackable categories only). m_SelectedDestStorage null = Auto
-	// (engine chooses the storage). When set, clicked/+'d stackable items go into this container.
-	// Rebuilt from the live preview kit each time PopulateItems renders a stackable category.
-	protected BaseInventoryStorageComponent m_SelectedDestStorage;
-	protected ref array<ref GRAD_ContainerRef> m_aDestContainers = {};
+	// The item currently selected into the Selected-Item panel (drives the ADD buttons). Null = none.
+	protected ref GRAD_ArsenalItemRecord m_SelectedRecord;
+
+	// prefab -> count on the preview, recomputed once per PopulateItems (walking the whole inventory
+	// per card was O(cards x items) and made the grid sluggish).
+	protected ref map<ResourceName, int> m_mPreviewCounts = new map<ResourceName, int>();
 
 	//------------------------------------------------------------------------------------------------
 	//! Stash the context that the next OpenMenu(GRAD_ArsenalMenu) call should pick up.
@@ -143,10 +178,31 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		SCR_InputButtonComponent cancelBtn = SCR_InputButtonComponent.GetInputButtonComponent(WIDGET_BTN_CANCEL, root);
 		if (cancelBtn)
 			cancelBtn.m_OnActivated.Insert(OnCancel);
+
+		SCR_InputButtonComponent addVest = SCR_InputButtonComponent.GetInputButtonComponent(WIDGET_BTN_ADD_VEST, root);
+		if (addVest)
+			addVest.m_OnActivated.Insert(OnAddToVest);
+
+		SCR_InputButtonComponent addBackpack = SCR_InputButtonComponent.GetInputButtonComponent(WIDGET_BTN_ADD_BACKPACK, root);
+		if (addBackpack)
+			addBackpack.m_OnActivated.Insert(OnAddToBackpack);
+
+		SCR_InputButtonComponent addEquip = SCR_InputButtonComponent.GetInputButtonComponent(WIDGET_BTN_ADD_EQUIP, root);
+		if (addEquip)
+			addEquip.m_OnActivated.Insert(OnEquipSelected);
+
+		// Start with nothing selected → ADD buttons disabled.
+		SetAddButtonsEnabled(false, false, false);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Spawn a local-only preview clone of the primary target and bind it to the preview widget.
+	//! Bind an engine-managed preview entity of the primary target's prefab to the preview widget.
+	//!
+	//! Uses SetPreviewItemFromPrefab + ResolvePreviewEntityForPrefab so the ItemPreviewManager OWNS the
+	//! preview entity's lifetime — that fixes the despawn (a hand-spawned clone got reaped by the
+	//! character lifetime system, and Deactivate()-pinning it broke render/input). Rotation/zoom are
+	//! driven by ONE persistent SCR_CharacterInventoryPreviewAttributes fed into both the manager and
+	//! the widget helper's Update() each frame.
 	protected void SetupPreview(notnull Widget root)
 	{
 		m_wPreview = ItemPreviewWidget.Cast(root.FindAnyWidget(WIDGET_PREVIEW));
@@ -160,42 +216,43 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (world)
 			m_PreviewManager = world.GetItemPreviewManager();
 
-		// Clone the primary target's prefab as a local, non-replicated preview character.
 		IEntity primary = m_Context.GetPrimaryTarget();
-		ResourceName charPrefab = GRAD_InventoryLib.GetPrefabResourceName(primary);
-		if (charPrefab != ResourceName.Empty)
-			m_PreviewCharacter = GRAD_InventoryLib.SpawnLocal(charPrefab);
+		m_sPreviewPrefab = GRAD_InventoryLib.GetPrefabResourceName(primary);
 
-		if (m_PreviewCharacter && m_PreviewManager)
+		if (m_sPreviewPrefab != ResourceName.Empty && m_PreviewManager)
 		{
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter);
+			// One persistent attributes object; the manager renders from it and the helper mutates it
+			// from mouse input. (Base PreviewRenderAttributes so it matches Update's inout param type.)
+			m_PreviewAttribs = new PreviewRenderAttributes();
 
-			// Make the clone's face/appearance match the edited unit (a fresh prefab spawn gets a
-			// random identity otherwise). Copy the source unit's Identity onto the clone.
-			CopyIdentity(primary, m_PreviewCharacter);
+			// Spawn a local clone and bind it to the widget — this is the render path that actually shows
+			// the character (the from-prefab/resolve path rendered blank). Despawn is mitigated by
+			// Deactivate() (PinPreviewAlive) which stops the lifetime tick while the manager keeps drawing.
+			m_PreviewCharacter = GRAD_InventoryLib.SpawnLocal(m_sPreviewPrefab);
 
-			// Mirror the target's current loadout onto the preview so the player edits from their
-			// real starting kit. force=false: the clone already carries the prefab's locked cosmetic
-			// body/clothing nodes (which cannot be re-inserted once removed). Clearing those with
-			// force=true left the clone naked and the engine despawned it. So we keep the locked
-			// nodes and only mirror the editable items on top.
-			GRAD_LoadoutData current = GRAD_LoadoutCapture.Capture(primary, "PreviewBase", true);
-			if (current)
-				GRAD_LoadoutApply.Apply(m_PreviewCharacter, current, true, false, m_aPreviewCreated);
+			if (m_PreviewCharacter)
+			{
+				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs);
 
-			// Pin the clone alive. A full gameplay character spawned with no controller/agent is
-			// reaped by the character/AI lifetime system after a short while (the "timeout" despawn).
-			// Deactivating the clone's entity events stops the controller ticking toward that cleanup;
-			// the preview manager keeps rendering it from its hierarchy, and inventory storage edits
-			// operate on the storage components directly so they still work. We re-activate briefly
-			// around each click-apply (see ApplyToPreview) then deactivate again.
-			PinPreviewAlive();
+				// Match the edited unit's face/appearance (a fresh spawn gets a random identity).
+				CopyIdentity(primary, m_PreviewCharacter);
+
+				// Mirror the target's current loadout so the player edits from their real starting kit.
+				// force=false: keep the prefab's locked cosmetic body/clothing nodes; only mirror the
+				// editable items on top.
+				GRAD_LoadoutData current = GRAD_LoadoutCapture.Capture(primary, "PreviewBase", true);
+				if (current)
+					GRAD_LoadoutApply.Apply(m_PreviewCharacter, current, true, false, m_aPreviewCreated);
+
+				// Refresh render with the mirrored kit; same persistent attribs (not null).
+				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
+
+				PinPreviewAlive();
+			}
 		}
 
-		// Mouse orbit + wheel zoom on the preview. Constructing the helper is not enough: it is a
-		// ScriptedWidgetEventHandler, so its OnMouseButtonDown/Up/Wheel only fire once it is registered
-		// as an event handler on the preview widget. Without AddHandler no mouse input reaches it and
-		// the character never rotates. The widget must also accept pointer input (see layout).
+		// Mouse orbit + wheel zoom. The helper is a ScriptedWidgetEventHandler — its mouse overrides
+		// only fire once registered on the widget via AddHandler.
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (m_wPreview && workspace)
 		{
@@ -226,8 +283,20 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Refresh the preview render after a mutation, keeping the same persistent attribs so the camera
+	//! rotation/zoom don't reset. The engine-managed preview entity owns its own lifetime, so there is
+	//! no Activate/Deactivate pinning to do.
+	protected void RefreshPreviewRender()
+	{
+		if (m_PreviewManager && m_wPreview && m_PreviewCharacter)
+			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
+
+		PinPreviewAlive();
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! Deactivate the preview clone's entity events so the character lifetime system stops ticking it
-	//! toward cleanup. Safe to call repeatedly.
+	//! toward cleanup, while the preview manager keeps rendering it. Safe to call repeatedly.
 	protected void PinPreviewAlive()
 	{
 		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
@@ -236,8 +305,8 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Apply a single-item loadout to the preview clone, re-activating it for the duration of the
-	//! mutation (some inventory operations expect an active entity) and re-pinning it afterwards.
+	//! Apply a single-item loadout additively to the preview character, then refresh the render. The
+	//! clone is re-activated for the mutation (some inventory ops expect an active entity), then re-pinned.
 	protected void ApplyToPreview(notnull GRAD_LoadoutData data, BaseInventoryStorageComponent preferredStorage = null)
 	{
 		if (!m_PreviewCharacter)
@@ -254,11 +323,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		foreach (IEntity e : created)
 			m_aPreviewCreated.Insert(e);
 
-		// Refresh the render in case the hierarchy auto-update missed the local mutation, then re-pin.
-		if (m_PreviewManager && m_wPreview)
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
-
-		PinPreviewAlive();
+		RefreshPreviewRender();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -266,8 +331,8 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! category is a button that, when clicked, fills the item list with that category's items.
 	protected void SetupCategoryRail(notnull Widget root)
 	{
-		m_wCategoryList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_CATEGORY_LIST));
-		m_wItemList = VerticalLayoutWidget.Cast(root.FindAnyWidget(WIDGET_ITEM_LIST));
+		m_wCategoryList = root.FindAnyWidget(WIDGET_CATEGORY_LIST);
+		m_wItemList = root.FindAnyWidget(WIDGET_ITEM_LIST);
 
 		// Source the records from the singleton service's (amortized) catalog index. The service is
 		// normally placed in the world, but ensure one exists so the browser works from any entry
@@ -327,25 +392,22 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			index.GetRecordCount(), m_Browser.GetCategoryCount()));
 
 		PopulateCategories();
-
-		if (m_Browser.GetCategoryCount() > 0)
-			SelectCategoryByIndex(0);
+		SelectCategoryByIndex(0);	// default to the Primary tab
+		RefreshLoadoutPanel();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Create one row button per category in the rail.
+	//! Create the five top tabs (Primary / Secondary / Throwables / Apparel / Container).
 	protected void PopulateCategories()
 	{
-		if (!m_wCategoryList || !m_Browser)
+		if (!m_wCategoryList)
 			return;
 
 		ClearChildren(m_wCategoryList);
 
-		array<int> types = m_Browser.GetCategoryTypes();
-		for (int i = 0, count = types.Count(); i < count; i++)
+		for (int i = 0, count = GRAD_ArsenalTabs.Count(); i < count; i++)
 		{
-			int categoryType = types[i];
-			Widget row = CreateRow(m_wCategoryList, GRAD_ArsenalCategoryLabels.LabelFor(categoryType));
+			Widget row = CreateRow(m_wCategoryList, GRAD_ArsenalTabs.LabelFor(i));
 			if (!row)
 				continue;
 
@@ -357,49 +419,32 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Select a category by rail index and refill the item list.
-	void SelectCategoryByIndex(int categoryIndex)
+	//! Select a tab by index (0..4) and refill the item grid with that tab's item types.
+	void SelectCategoryByIndex(int tabIndex)
 	{
-		m_iSelectedCategory = categoryIndex;
+		m_iSelectedCategory = tabIndex;
 		if (m_Browser)
-			m_Browser.SetCategoryByIndex(categoryIndex);
+			m_Browser.SetCategoryMask(GRAD_ArsenalTabs.MaskFor(tabIndex));
 
 		PopulateItems();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Fill the item list with the current category's filtered records.
+	//! Fill the item grid with the current tab's filtered records as icon cards. Variants of one base
+	//! name collapse under a header card that expands to its variant cards (reuses m_mExpandedGroups).
 	protected void PopulateItems()
 	{
 		if (!m_wItemList || !m_Browser)
 			return;
 
-		// Drop the previous item-list handlers BEFORE destroying their widgets, so no stale handler
-		// keeps an invoker bound to a freed widget (that crashes the menu on the next click).
+		// Drop the previous card handlers BEFORE destroying their widgets, so no stale handler keeps an
+		// invoker bound to a freed widget (that crashes the menu on the next click).
 		m_aItemRowHandlers.Clear();
 		ClearChildren(m_wItemList);
 
-		int activeType = m_Browser.GetActiveCategory();
-		bool stackable = GRAD_ArsenalCategoryLabels.IsStackable(activeType);
+		// Precompute prefab->count over the preview once (cheap map), so each card is O(1) not O(items).
+		RebuildPreviewCounts();
 
-		// [ Empty ] row at the top clears whatever is equipped in this category.
-		Widget emptyRow = CreateRow(m_wItemList, "[ Empty ]");
-		if (emptyRow)
-		{
-			GRAD_ArsenalRowHandler eh = new GRAD_ArsenalRowHandler(this, emptyRow);
-			eh.m_bIsEmptyRow = true;
-			eh.m_iActiveCategoryType = activeType;
-			m_aItemRowHandlers.Insert(eh);
-		}
-
-		// Stackable categories (ammo, grenades, meds, ...) get a destination-container selector so the
-		// player chooses which worn container the items go into (vest / backpack / uniform), instead of
-		// the engine picking. Single-slot categories (clothing, weapons) auto-equip and need no selector.
-		if (stackable)
-			PopulateDestinationSelector();
-
-		// Build the grouped (by base name) list. A group with one item renders as a plain row; a
-		// group with several renders a collapsible header + (when expanded) its variant rows.
 		array<ref GRAD_ItemGroup> groups = {};
 		m_Browser.GetGrouped(groups);
 
@@ -410,44 +455,26 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 			if (group.GetCount() == 1)
 			{
-				// Single variant: no point in a collapsible header — show the item directly.
-				CreateRecordRow(group.m_aItems[0], stackable);
+				CreateItemCard(group.m_aItems[0], group.m_aItems[0].m_sDisplayName);
 				continue;
 			}
 
+			// Multi-variant: a header card (click to expand/collapse) then, when expanded, one card per
+			// variant labelled with its concise variant suffix.
 			bool expanded = IsGroupExpanded(group.m_sLabel);
-			CreateGroupHeaderRow(group, expanded);
+			CreateGroupHeaderCard(group, expanded);
 
 			if (expanded)
 			{
 				foreach (GRAD_ArsenalItemRecord rec : group.m_aItems)
-					CreateRecordRow(rec, stackable, true);
+				{
+					string variant = ConciseVariant(rec);
+					if (GRAD_CommonUtils.IsBlank(variant))
+						variant = rec.m_sDisplayName;
+					CreateItemCard(rec, variant);
+				}
 			}
 		}
-	}
-
-	//------------------------------------------------------------------------------------------------
-	//! Render one record as either a quantity row (stackable category) or a plain equip row.
-	//! `indented` true means the row sits under an expanded group header — show only the variant
-	//! suffix (the base name is already on the header) and prefix a marker for hierarchy.
-	protected void CreateRecordRow(GRAD_ArsenalItemRecord rec, bool stackable, bool indented = false)
-	{
-		if (!rec)
-			return;
-
-		string rowLabel = rec.m_sDisplayName;
-		if (indented)
-		{
-			string variant = ConciseVariant(rec);
-			if (GRAD_CommonUtils.IsBlank(variant))
-				variant = rec.m_sDisplayName;
-			rowLabel = "   " + variant;	// indent under the header
-		}
-
-		if (stackable)
-			CreateQuantityRow(rec, rowLabel);
-		else
-			CreateItemRow(rec, rowLabel);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -514,28 +541,27 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Collapsible header row: "▶ Label (N)" collapsed / "▼ Label (N)" expanded. Clicking toggles.
-	protected void CreateGroupHeaderRow(notnull GRAD_ItemGroup group, bool expanded)
+	//! Collapsible group header card: "Label (N)" with an expand marker. Clicking toggles expansion.
+	protected void CreateGroupHeaderCard(notnull GRAD_ItemGroup group, bool expanded)
 	{
-		string arrow;
+		string marker;
 		if (expanded)
-			arrow = "[-]";
+			marker = "[-] ";
 		else
-			arrow = "[+]";
+			marker = "[+] ";
 
-		string label = string.Format("%1 %2 (%3)", arrow, group.m_sLabel, group.GetCount());
-		Widget row = CreateRow(m_wItemList, label);
-		if (!row)
+		Widget card = CreateItemCardWidget(marker + group.m_sLabel, string.Format("%1", group.GetCount()), "", null);
+		if (!card)
 			return;
 
-		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, card);
 		handler.m_bIsGroupHeader = true;
 		handler.m_sGroupKey = group.m_sLabel;
 		m_aItemRowHandlers.Insert(handler);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Toggle a group's expansion and rebuild the list.
+	//! Toggle a group's expansion and rebuild the grid.
 	void OnGroupHeaderClicked(string groupKey)
 	{
 		m_mExpandedGroups.Set(groupKey, !IsGroupExpanded(groupKey));
@@ -543,220 +569,241 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Render the destination-container selector strip: an "Auto" row plus one row per worn container
-	//! on the preview (vest, backpack, uniform, ...). The active choice is marked. Clicking a row sets
-	//! m_SelectedDestStorage and rebuilds. Rebuilt from the live kit every call, so equipping a new
-	//! backpack/vest makes it available (and dropping the selected one falls back to Auto).
-	protected void PopulateDestinationSelector()
+	//! Create one item card (icon + name + count-on-preview) for a record. Clicking selects the item
+	//! into the Selected-Item panel (which offers the ADD buttons) rather than equipping immediately.
+	protected void CreateItemCard(notnull GRAD_ArsenalItemRecord rec, string nameOverride)
 	{
-		m_aDestContainers.Clear();
-		if (m_PreviewCharacter)
-			GRAD_InventoryLib.CollectDestinationContainers(m_PreviewCharacter, m_aDestContainers);
+		string name = nameOverride;
+		if (GRAD_CommonUtils.IsBlank(name))
+			name = rec.m_sDisplayName;
 
-		// If the previously-selected storage is gone (container removed), fall back to Auto.
-		if (m_SelectedDestStorage && !ContainerStillPresent(m_SelectedDestStorage))
-			m_SelectedDestStorage = null;
+		int count = 0;
+		m_mPreviewCounts.Find(rec.m_sPrefab, count);	// O(1) from the precomputed map
+		string countText = "";
+		if (count > 0)
+			countText = count.ToString();
 
-		// "Auto" row (engine chooses) — always available, default.
-		CreateDestRow("Destination: Auto", null, m_SelectedDestStorage == null);
-
-		foreach (GRAD_ContainerRef c : m_aDestContainers)
-		{
-			if (!c || !c.m_Storage)
-				continue;
-
-			bool selected = (c.m_Storage == m_SelectedDestStorage);
-			CreateDestRow("  → " + c.m_sLabel, c.m_Storage, selected);
-		}
-	}
-
-	//------------------------------------------------------------------------------------------------
-	//! Whether a storage is still among the preview's live destination containers.
-	protected bool ContainerStillPresent(BaseInventoryStorageComponent storage)
-	{
-		foreach (GRAD_ContainerRef c : m_aDestContainers)
-		{
-			if (c && c.m_Storage == storage)
-				return true;
-		}
-		return false;
-	}
-
-	//------------------------------------------------------------------------------------------------
-	//! One destination-selector row. `selected` prefixes a marker so the active choice is obvious.
-	protected void CreateDestRow(string label, BaseInventoryStorageComponent storage, bool selected)
-	{
-		string text = label;
-		if (selected)
-			text = "[x]" + label;
-		else
-			text = "[ ]" + label;
-
-		Widget row = CreateRow(m_wItemList, text);
-		if (!row)
+		Widget card = CreateItemCardWidget(name, countText, "", rec.m_UiInfo);
+		if (!card)
 			return;
 
-		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
-		handler.m_bIsDestSelect = true;
-		handler.m_DestStorage = storage;
-		m_aItemRowHandlers.Insert(handler);
-	}
-
-	//------------------------------------------------------------------------------------------------
-	//! Set the active destination container (null = Auto) and rebuild the list to refresh the marker.
-	void OnDestSelected(BaseInventoryStorageComponent storage)
-	{
-		m_SelectedDestStorage = storage;
-		PopulateItems();
-	}
-
-	//------------------------------------------------------------------------------------------------
-	//! Plain click-to-equip row for a single-slot item.
-	protected void CreateItemRow(notnull GRAD_ArsenalItemRecord rec, string labelOverride = string.Empty)
-	{
-		string label = labelOverride;
-		if (GRAD_CommonUtils.IsBlank(label))
-			label = rec.m_sDisplayName;
-
-		Widget row = CreateRow(m_wItemList, label);
-		if (!row)
-			return;
-
-		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, card);
 		handler.m_Record = rec;
 		handler.m_bIsCategory = false;
 		m_aItemRowHandlers.Insert(handler);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Quantity row (label + [-] N [+]) for a stackable item. Shows the count currently on the
-	//! preview character so the GM sees how many will be applied.
-	protected void CreateQuantityRow(notnull GRAD_ArsenalItemRecord rec, string labelOverride = string.Empty)
+	//! Build a card widget from GRAD_ItemCard.layout under the item grid: sets the icon (from uiInfo,
+	//! when present), the name, and the two small stat texts. Returns the card root widget (a button).
+	protected Widget CreateItemCardWidget(string name, string count, string weight, SCR_UIInfo uiInfo)
 	{
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (!workspace)
-			return;
+			return null;
 
-		Widget row = workspace.CreateWidgets(QTY_ROW_LAYOUT, m_wItemList);
-		if (!row)
-			return;
+		Widget card = workspace.CreateWidgets(CARD_LAYOUT, m_wItemList);
+		if (!card)
+			return null;
 
-		string labelText = labelOverride;
-		if (GRAD_CommonUtils.IsBlank(labelText))
-			labelText = rec.m_sDisplayName;
+		TextWidget nameW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_NAME));
+		if (nameW)
+			nameW.SetText(name);
 
-		TextWidget label = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_LABEL));
-		if (label)
-			label.SetText(labelText);
+		TextWidget countW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_COUNT));
+		if (countW)
+			countW.SetText(count);
 
-		TextWidget count = TextWidget.Cast(row.FindAnyWidget(WIDGET_QTY_COUNT));
-		if (count)
-			count.SetText(CountOnPreview(rec.m_sPrefab).ToString());
+		TextWidget weightW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_WEIGHT));
+		if (weightW)
+			weightW.SetText(weight);
 
-		// Caption the inherited text buttons.
-		SetButtonText(row, WIDGET_QTY_MINUS, "-");
-		SetButtonText(row, WIDGET_QTY_PLUS, "+");
+		ImageWidget iconW = ImageWidget.Cast(card.FindAnyWidget(WIDGET_CARD_ICON));
+		if (iconW)
+		{
+			if (uiInfo && uiInfo.HasIcon())
+				uiInfo.SetIconTo(iconW);
+			else
+				iconW.SetVisible(false);
+		}
 
-		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row, false);
-		handler.m_Record = rec;
-		handler.BindQuantityButtons(row, WIDGET_QTY_MINUS, WIDGET_QTY_PLUS, WIDGET_QTY_COUNT);
-		m_aItemRowHandlers.Insert(handler);
+		return card;
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Called by a row handler when an ITEM row is clicked: add that item to the preview character.
+	//! Select an item into the Selected-Item panel: fill icon/name/stats and enable the ADD buttons
+	//! for the containers that currently exist on the preview and have room.
 	void OnItemRowClicked(GRAD_ArsenalItemRecord record)
 	{
-		if (!record || !m_PreviewCharacter)
-			return;
-
-		// Add the chosen item to the preview locally. The engine auto-refreshes the preview render.
-		GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(record.m_sPrefab, -1, string.Empty, 1);
-		GRAD_LoadoutData single = new GRAD_LoadoutData();
-		single.m_Root.AddChild(entry);
-
-		ApplyToPreview(single);
+		m_SelectedRecord = record;
+		RefreshSelectedPanel();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Called when the "[ Empty ]" row is clicked: remove every item currently on the preview whose
-	//! catalog arsenal type matches the active category. Clears the helmet for Headgear, the rifle for
-	//! Rifles, all grenades for Grenades, etc.
-	void OnEmptyRowClicked(int categoryType)
+	//! Refresh the Selected-Item panel from m_SelectedRecord: icon, name, stats, and which ADD buttons
+	//! are enabled (a container ADD is enabled only when that container exists on the preview & has a
+	//! free slot; the generic "equip" ADD applies to apparel/weapons that auto-slot).
+	protected void RefreshSelectedPanel()
 	{
-		if (!m_PreviewCharacter || categoryType == 0)
+		Widget root = GetRootWidget();
+		if (!root)
 			return;
 
-		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
-		if (!service || !service.GetCatalogIndex())
-			return;
-		GRAD_CatalogIndex index = service.GetCatalogIndex();
+		TextWidget nameW = TextWidget.Cast(root.FindAnyWidget(WIDGET_SEL_NAME));
+		TextWidget statsW = TextWidget.Cast(root.FindAnyWidget(WIDGET_SEL_STATS));
+		ImageWidget iconW = ImageWidget.Cast(root.FindAnyWidget(WIDGET_SEL_ICON));
 
-		SCR_InventoryStorageManagerComponent manager =
-			SCR_InventoryStorageManagerComponent.Cast(m_PreviewCharacter.FindComponent(SCR_InventoryStorageManagerComponent));
-		if (!manager)
-			return;
-
-		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
-		if (ge)
-			ge.Activate();
-
-		array<IEntity> items = {};
-		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
-
-		int removed = 0;
-		// Leaf-first so nested items go before their containers.
-		for (int i = items.Count() - 1; i >= 0; i--)
+		if (!m_SelectedRecord)
 		{
-			IEntity item = items[i];
-			if (!item)
-				continue;
+			if (nameW) nameW.SetText("");
+			if (statsW) statsW.SetText("");
+			if (iconW) iconW.SetVisible(false);
+			SetAddButtonsEnabled(false, false, false);
+			return;
+		}
 
-			ResourceName prefab = GRAD_InventoryLib.GetPrefabResourceName(item);
-			if (index.GetArsenalTypeForPrefab(prefab) != categoryType)
-				continue;
-
-			if (manager.TryRemoveItemFromInventory(item))
+		if (nameW)
+			nameW.SetText(m_SelectedRecord.m_sDisplayName);
+		if (statsW)
+			statsW.SetText(GRAD_ArsenalCategoryLabels.LabelFor(m_SelectedRecord.m_iArsenalType));
+		if (iconW)
+		{
+			if (m_SelectedRecord.m_UiInfo && m_SelectedRecord.m_UiInfo.HasIcon())
 			{
-				SCR_EntityHelper.DeleteEntityAndChildren(item);
-				removed++;
+				iconW.SetVisible(true);
+				m_SelectedRecord.m_UiInfo.SetIconTo(iconW);
+			}
+			else
+			{
+				iconW.SetVisible(false);
 			}
 		}
 
-		GRAD_Log.Info(string.Format("Empty: removed %1 item(s) of category %2", removed, categoryType));
+		// Decide which ADD buttons make sense. Cargo items (stackables) → vest/backpack when present +
+		// have room. Apparel/weapons → the generic Equip add (auto-slots).
+		bool stackable = GRAD_ArsenalCategoryLabels.IsStackable(m_SelectedRecord.m_iArsenalType);
+		bool vestOk = stackable && FindContainerStorage(GRAD_ContainerTypes.MASK, true) != null;	// any cargo w/ room (approx)
+		bool vest = stackable && FindNamedContainer(4096) != null;		// VEST_AND_WAIST
+		bool backpack = stackable && FindNamedContainer(128) != null;	// BACKPACK
+		bool equip = !stackable;										// clothing/weapon auto-slot
 
-		if (m_PreviewManager && m_wPreview)
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
-
-		PinPreviewAlive();
+		SetAddButtonsEnabled(vest, backpack, equip);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Called by a quantity row's +/- buttons. delta=+1 adds one of the item to the preview; delta=-1
-	//! removes one equipped instance. Returns the new count on the preview (for the row to display).
-	int OnQuantityChanged(GRAD_ArsenalItemRecord record, int delta)
+	//! Enable/disable the three ADD buttons and update their captions.
+	protected void SetAddButtonsEnabled(bool vest, bool backpack, bool equip)
 	{
-		if (!record || !m_PreviewCharacter)
-			return 0;
+		Widget root = GetRootWidget();
+		if (!root)
+			return;
 
-		if (delta > 0)
-		{
-			GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(record.m_sPrefab, -1, string.Empty, 1);
-			GRAD_LoadoutData single = new GRAD_LoadoutData();
-			single.m_Root.AddChild(entry);
-			// Route into the chosen destination container (null = Auto / engine choice).
-			ApplyToPreview(single, m_SelectedDestStorage);
-		}
-		else if (delta < 0)
-		{
-			RemoveOneFromPreview(record.m_sPrefab);
-		}
-
-		return CountOnPreview(record.m_sPrefab);
+		SetButtonEnabled(root, WIDGET_BTN_ADD_VEST, vest);
+		SetButtonEnabled(root, WIDGET_BTN_ADD_BACKPACK, backpack);
+		SetButtonEnabled(root, WIDGET_BTN_ADD_EQUIP, equip);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Number of instances of a prefab currently equipped on the preview character.
+	//! Find the preview's container storage owned by an item of the given arsenal-type bit (e.g. VEST
+	//! 4096, BACKPACK 128). Returns null if that garment isn't equipped.
+	protected BaseInventoryStorageComponent FindNamedContainer(int arsenalTypeBit)
+	{
+		return FindContainerStorage(arsenalTypeBit, false);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Find a container storage among the preview's cargo containers. If `anyWithRoom` is true, return
+	//! the first with a free slot regardless of type; else return the one whose owner arsenal type has
+	//! `typeMask` bit set.
+	protected BaseInventoryStorageComponent FindContainerStorage(int typeMask, bool anyWithRoom)
+	{
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (!m_PreviewCharacter || !service || !service.GetCatalogIndex())
+			return null;
+
+		array<ref GRAD_ContainerRef> containers = {};
+		GRAD_InventoryLib.CollectDestinationContainers(m_PreviewCharacter, service.GetCatalogIndex(), containers);
+
+		foreach (GRAD_ContainerRef c : containers)
+		{
+			if (!c || !c.m_Storage || !c.m_Owner)
+				continue;
+
+			if (anyWithRoom)
+			{
+				if (GRAD_InventoryLib.StorageHasFreeSlot(c.m_Storage))
+					return c.m_Storage;
+				continue;
+			}
+
+			ResourceName ownerPrefab = GRAD_InventoryLib.GetPrefabResourceName(c.m_Owner);
+			int ownerType = service.GetCatalogIndex().GetArsenalTypeForPrefab(ownerPrefab);
+			if ((ownerType & typeMask) != 0)
+				return c.m_Storage;
+		}
+		return null;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! ADD TO VEST button: add the selected item into the vest storage. No-op if no vest is worn (the
+	//! button is dimmed in that case, but guard anyway so a stray click doesn't fall through to equip).
+	void OnAddToVest()
+	{
+		BaseInventoryStorageComponent vest = FindNamedContainer(4096);	// VEST_AND_WAIST
+		if (vest)
+			AddSelectedToContainer(vest);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! ADD TO BACKPACK button: add the selected item into the backpack storage. No-op if no backpack.
+	void OnAddToBackpack()
+	{
+		BaseInventoryStorageComponent bag = FindNamedContainer(128);	// BACKPACK
+		if (bag)
+			AddSelectedToContainer(bag);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! EQUIP button: add the selected apparel/weapon (auto-slots to its loadout slot).
+	void OnEquipSelected()
+	{
+		AddSelectedToContainer(null);	// null = engine auto-slot / equip
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Apply the selected record to the preview, routed into `storage` (null = auto/equip). Refreshes
+	//! the grid (counts) and the loadout panel.
+	protected void AddSelectedToContainer(BaseInventoryStorageComponent storage)
+	{
+		if (!m_SelectedRecord || !m_PreviewCharacter)
+			return;
+
+		GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(m_SelectedRecord.m_sPrefab, -1, string.Empty, 1);
+		GRAD_LoadoutData single = new GRAD_LoadoutData();
+		single.m_Root.AddChild(entry);
+		ApplyToPreview(single, storage);
+
+		PopulateItems();			// refresh counts + newly-available containers
+		RefreshSelectedPanel();		// re-evaluate ADD buttons (new container may now exist)
+		RefreshLoadoutPanel();		// update fill bars + contents
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Recompute prefab->count over the whole preview inventory once (into m_mPreviewCounts), so each
+	//! card can look up its count in O(1). Reuses the shared CountPrefabInstances helper.
+	protected void RebuildPreviewCounts()
+	{
+		m_mPreviewCounts.Clear();
+		if (!m_PreviewCharacter)
+			return;
+
+		array<IEntity> items = {};
+		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
+		GRAD_InventoryLib.CountPrefabInstances(items, m_mPreviewCounts);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Number of instances of a prefab currently equipped on the preview character (single lookup).
 	protected int CountOnPreview(ResourceName prefab)
 	{
 		if (!m_PreviewCharacter)
@@ -775,21 +822,19 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Remove a single equipped instance of a prefab from the preview character.
-	protected void RemoveOneFromPreview(ResourceName prefab)
+	//! Remove a single equipped instance of a prefab from the preview character. Returns true if one
+	//! was actually removed.
+	protected bool RemoveOneFromPreview(ResourceName prefab)
 	{
 		SCR_InventoryStorageManagerComponent manager =
 			SCR_InventoryStorageManagerComponent.Cast(m_PreviewCharacter.FindComponent(SCR_InventoryStorageManagerComponent));
 		if (!manager)
-			return;
-
-		GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
-		if (ge)
-			ge.Activate();
+			return false;
 
 		array<IEntity> items = {};
 		GRAD_InventoryLib.CollectAllItems(m_PreviewCharacter, items);
 
+		bool removed = false;
 		for (int i = items.Count() - 1; i >= 0; i--)
 		{
 			IEntity item = items[i];
@@ -797,14 +842,22 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 				continue;
 
 			if (manager.TryRemoveItemFromInventory(item))
+			{
 				SCR_EntityHelper.DeleteEntityAndChildren(item);
+				removed = true;
+			}
+			else
+			{
+				GRAD_Log.Warn(string.Format("RemoveOne: TryRemoveItemFromInventory failed for '%1'", prefab));
+			}
 			break; // remove just one
 		}
 
-		if (m_PreviewManager && m_wPreview)
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, null, true);
+		if (!removed)
+			GRAD_Log.Debug(string.Format("RemoveOne: no removable instance of '%1' found on preview", prefab));
 
-		PinPreviewAlive();
+		RefreshPreviewRender();
+		return removed;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -827,7 +880,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Set the caption of a named WLib text button inside a row.
+	//! Set the caption of a named WLib text button inside a root.
 	protected void SetButtonText(notnull Widget root, string buttonName, string caption)
 	{
 		Widget btn = root.FindAnyWidget(buttonName);
@@ -837,6 +890,118 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		SCR_ButtonTextComponent text = SCR_ButtonTextComponent.FindButtonTextComponent(btn);
 		if (text)
 			text.SetText(caption);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Enable/disable a named button (dims + blocks clicks when disabled).
+	protected void SetButtonEnabled(notnull Widget root, string buttonName, bool enabled)
+	{
+		Widget btn = root.FindAnyWidget(buttonName);
+		if (!btn)
+			return;
+
+		// Dim a not-applicable button via opacity. (The ADD handlers already no-op when the target
+		// container / selected record is invalid, so a click on a dim button is harmless.)
+		float opacity = 0.35;
+		if (enabled)
+			opacity = 1.0;
+		btn.SetOpacity(opacity);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Refresh the right loadout summary panel: for Uniform / Vest / Backpack show a fill bar (by slot
+	//! occupancy), a percent label, and the list of contained items. Slots the preview isn't wearing
+	//! render as "[Empty]".
+	protected void RefreshLoadoutPanel()
+	{
+		RefreshLoadoutSlot(2048, WIDGET_SLOT_UNIFORM_BAR, WIDGET_SLOT_UNIFORM_PCT, WIDGET_SLOT_UNIFORM_CONTENTS);	// TORSO (uniform)
+		RefreshLoadoutSlot(4096, WIDGET_SLOT_VEST_BAR, WIDGET_SLOT_VEST_PCT, WIDGET_SLOT_VEST_CONTENTS);			// VEST
+		RefreshLoadoutSlot(128,  WIDGET_SLOT_BACKPACK_BAR, WIDGET_SLOT_BACKPACK_PCT, WIDGET_SLOT_BACKPACK_CONTENTS);	// BACKPACK
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Refresh one loadout-panel slot block from the container owned by the given arsenal-type bit.
+	protected void RefreshLoadoutSlot(int arsenalTypeBit, string barName, string pctName, string contentsName)
+	{
+		Widget root = GetRootWidget();
+		if (!root)
+			return;
+
+		BaseInventoryStorageComponent storage = FindNamedContainer(arsenalTypeBit);
+
+		float frac = 0;
+		if (storage)
+			frac = GRAD_InventoryLib.GetStorageFillFraction(storage);
+
+		// Fill bar: fade the bar toward empty as the fraction drops (opacity is a reliable Widget API;
+		// a proportional-width bar would need a FrameSlot-anchored fill, a later visual refinement). The
+		// numeric percent below is the precise readout.
+		Widget bar = root.FindAnyWidget(barName);
+		if (bar)
+		{
+			float op = 0.25 + 0.75 * frac;	// 0.25 (empty) .. 1.0 (full)
+			bar.SetOpacity(op);
+		}
+
+		TextWidget pct = TextWidget.Cast(root.FindAnyWidget(pctName));
+		if (pct)
+		{
+			if (storage)
+				pct.SetText(string.Format("%1%%", Math.Round(frac * 100)));
+			else
+				pct.SetText("");
+		}
+
+		VerticalLayoutWidget contents = VerticalLayoutWidget.Cast(root.FindAnyWidget(contentsName));
+		if (contents)
+			FillSlotContents(contents, storage);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! List a container storage's direct items into a contents layout (simple text lines). "[Empty]"
+	//! when the garment isn't worn or holds nothing.
+	protected void FillSlotContents(notnull VerticalLayoutWidget contents, BaseInventoryStorageComponent storage)
+	{
+		ClearChildren(contents);
+
+		if (!storage)
+		{
+			CreateContentsLine(contents, "[Empty]");
+			return;
+		}
+
+		int total = storage.GetSlotsCount();
+		int shown = 0;
+		for (int i = 0; i < total; i++)
+		{
+			IEntity item = storage.Get(i);
+			if (!item)
+				continue;
+
+			CreateContentsLine(contents, GRAD_InventoryLib.GetEntityShortName(item));
+			shown++;
+		}
+
+		if (shown == 0)
+			CreateContentsLine(contents, "[Empty]");
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One text line in a loadout-panel contents list (built in script; no layout needed).
+	protected void CreateContentsLine(notnull Widget parent, string text)
+	{
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		if (!ws)
+			return;
+
+		Widget line = ws.CreateWidget(WidgetType.TextWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, parent);
+		TextWidget tw = TextWidget.Cast(line);
+		if (tw)
+		{
+			tw.SetText(text);
+			tw.SetExactFontSize(14);
+			tw.SetColor(new Color(0.8, 0.85, 0.9, 1));
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -921,11 +1086,16 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 		GRAD_LoadoutApply.CleanupCreated(m_aPreviewCreated);
 
+		// The clone is ours (SpawnLocal) — release the widget binding, then delete it.
+		if (m_PreviewManager && m_wPreview)
+			m_PreviewManager.SetPreviewItem(m_wPreview, null);
+
 		if (m_PreviewCharacter)
 		{
 			SCR_EntityHelper.DeleteEntityAndChildren(m_PreviewCharacter);
 			m_PreviewCharacter = null;
 		}
+		m_PreviewAttribs = null;
 
 		super.OnMenuClose();
 		GRAD_Log.Info("ArsenalMenu: closed");
@@ -936,11 +1106,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	{
 		super.OnMenuUpdate(tDelta);
 
-		// Drive the preview orbit/zoom camera.
-		if (m_PreviewCameraHelper)
+		// Drive preview orbit/zoom: feed the SAME persistent attribs the manager renders from, so the
+		// helper's mouse-driven RotateItemCamera/ZoomCamera actually show. Re-push on change.
+		if (m_PreviewCameraHelper && m_PreviewAttribs && m_PreviewManager && m_wPreview && m_PreviewCharacter)
 		{
-			PreviewRenderAttributes attribs;
-			m_PreviewCameraHelper.Update(tDelta, attribs);
+			bool changed = m_PreviewCameraHelper.Update(tDelta, m_PreviewAttribs);
+			if (changed)
+				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs);
 		}
 	}
 }
@@ -988,22 +1160,14 @@ class GRAD_ArsenalRowHandler
 {
 	protected GRAD_ArsenalMenu m_Menu;
 
-	int m_iCategoryIndex = -1;			//!< meaningful when m_bIsCategory
-	ref GRAD_ArsenalItemRecord m_Record;	//!< meaningful for item / quantity rows
-	bool m_bIsCategory;					//!< category-rail row
-	bool m_bIsEmptyRow;					//!< the "[ Empty ]" row that clears the active category
-	int m_iActiveCategoryType;			//!< category type bit this row's [Empty] should clear
-	bool m_bIsGroupHeader;				//!< collapsible base-name group header row
+	int m_iCategoryIndex = -1;			//!< meaningful when m_bIsCategory (tab index)
+	ref GRAD_ArsenalItemRecord m_Record;	//!< meaningful for item cards
+	bool m_bIsCategory;					//!< top-tab button
+	bool m_bIsGroupHeader;				//!< collapsible base-name group header card
 	string m_sGroupKey;					//!< group label this header toggles (when m_bIsGroupHeader)
-	bool m_bIsDestSelect;				//!< destination-container selector row
-	BaseInventoryStorageComponent m_DestStorage;	//!< container this row selects (null = Auto)
-
-	//! For quantity rows: the count label to refresh after +/- (null on plain rows).
-	TextWidget m_wCountLabel;
 
 	//------------------------------------------------------------------------------------------------
-	//! Plain row: a single button activates OnActivated. For quantity rows pass bindSingleButton =
-	//! false (the row root is a layout with TWO buttons; bind them via BindQuantityButtons instead).
+	//! Binds the widget's single SCR_InputButtonComponent to OnActivated.
 	void GRAD_ArsenalRowHandler(GRAD_ArsenalMenu menu, notnull Widget rowWidget, bool bindSingleButton = true)
 	{
 		m_Menu = menu;
@@ -1017,57 +1181,17 @@ class GRAD_ArsenalRowHandler
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Bind the two buttons of a quantity row (looked up by name) to +/- handlers.
-	void BindQuantityButtons(notnull Widget rowWidget, string minusName, string plusName, string countName)
-	{
-		SCR_InputButtonComponent minusBtn = SCR_InputButtonComponent.GetInputButtonComponent(minusName, rowWidget);
-		if (minusBtn)
-			minusBtn.m_OnActivated.Insert(OnMinus);
-
-		SCR_InputButtonComponent plusBtn = SCR_InputButtonComponent.GetInputButtonComponent(plusName, rowWidget);
-		if (plusBtn)
-			plusBtn.m_OnActivated.Insert(OnPlus);
-
-		m_wCountLabel = TextWidget.Cast(rowWidget.FindAnyWidget(countName));
-	}
-
-	//------------------------------------------------------------------------------------------------
 	protected void OnActivated()
 	{
 		if (!m_Menu)
 			return;
 
-		if (m_bIsDestSelect)
-			m_Menu.OnDestSelected(m_DestStorage);
-		else if (m_bIsGroupHeader)
+		if (m_bIsGroupHeader)
 			m_Menu.OnGroupHeaderClicked(m_sGroupKey);
-		else if (m_bIsEmptyRow)
-			m_Menu.OnEmptyRowClicked(m_iActiveCategoryType);
 		else if (m_bIsCategory)
 			m_Menu.SelectCategoryByIndex(m_iCategoryIndex);
 		else
 			m_Menu.OnItemRowClicked(m_Record);
-	}
-
-	//------------------------------------------------------------------------------------------------
-	protected void OnPlus()
-	{
-		if (m_Menu && m_Record)
-			RefreshCount(m_Menu.OnQuantityChanged(m_Record, 1));
-	}
-
-	//------------------------------------------------------------------------------------------------
-	protected void OnMinus()
-	{
-		if (m_Menu && m_Record)
-			RefreshCount(m_Menu.OnQuantityChanged(m_Record, -1));
-	}
-
-	//------------------------------------------------------------------------------------------------
-	void RefreshCount(int count)
-	{
-		if (m_wCountLabel)
-			m_wCountLabel.SetText(count.ToString());
 	}
 }
 
@@ -1130,5 +1254,68 @@ class GRAD_ArsenalCategoryLabels
 			| (1 << 18);  // EXPLOSIVES (mines/charges)
 
 		return (arsenalType & STACKABLE) != 0;
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! The five top tabs of the redesigned arsenal, each mapping to a SET of SCR_EArsenalItemType bits
+//! (see GRAD_ArsenalCategoryLabels for the bit meanings). Selecting a tab shows every record whose
+//! m_iArsenalType is in the tab's mask.
+//!
+//!   Primary   = Rifles, MGs, Sniper, Launchers
+//!   Secondary = Pistols
+//!   Throwables= Grenades, Smokes/Flares, Explosives, Medical
+//!   Apparel   = Headgear, Jackets, Vests, Trousers, Footwear, Gloves
+//!   Container = Backpacks, Radio Backpacks
+class GRAD_ArsenalTabs
+{
+	static const int PRIMARY   = (1<<1) | (1<<5) | (1<<8) | (1<<4);					// RIFLE|MG|SNIPER|LAUNCHER
+	static const int SECONDARY = (1<<2);											// PISTOL
+	static const int THROWABLES= (1<<3) | (1<<9) | (1<<18) | (1<<6);					// GRENADE|SMOKE|EXPLOSIVE|HEAL
+	static const int APPAREL   = (1<<10)|(1<<11)|(1<<12)|(1<<13)|(1<<14)|(1<<19);	// HEAD|TORSO|VEST|LEGS|FOOT|HAND
+	static const int CONTAINER = (1<<7) | (1<<15);									// BACKPACK|RADIO_BACKPACK
+
+	//------------------------------------------------------------------------------------------------
+	//! Number of tabs.
+	static int Count()
+	{
+		return 5;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Display label for a tab index (0..4).
+	static string LabelFor(int tabIndex)
+	{
+		switch (tabIndex)
+		{
+			case 0: return "Primary";
+			case 1: return "Secondary";
+			case 2: return "Throwables";
+			case 3: return "Apparel";
+			case 4: return "Container";
+		}
+		return string.Format("Tab %1", tabIndex);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Arsenal-type bit mask for a tab index (0..4). 0 for out-of-range.
+	static int MaskFor(int tabIndex)
+	{
+		switch (tabIndex)
+		{
+			case 0: return PRIMARY;
+			case 1: return SECONDARY;
+			case 2: return THROWABLES;
+			case 3: return APPAREL;
+			case 4: return CONTAINER;
+		}
+		return 0;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether items in this tab are stackable (quantity control). Throwables tab is the stackable one.
+	static bool IsStackableTab(int tabIndex)
+	{
+		return tabIndex == 2;
 	}
 }

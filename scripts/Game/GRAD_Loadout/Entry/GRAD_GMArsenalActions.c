@@ -76,6 +76,13 @@ class GRAD_GMOpenArsenalAction : SCR_BaseContextAction
 	//------------------------------------------------------------------------------------------------
 	override bool CanBeShown(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags)
 	{
+		// Only offer the arsenal once the catalog preload has finished — opening before the index is
+		// built shows an empty/partial browser. The service is spawned + built shortly after world
+		// entry (see GradPreloadArsenalTick), so this just delays the button by the preload window.
+		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
+		if (!service || !service.IsCatalogReady())
+			return false;
+
 		array<IEntity> chars = {};
 		return GRAD_GMArsenalActionUtils.CollectCharacters(selectedEntities, chars) > 0
 			|| GRAD_GMArsenalActionUtils.CharacterOf(hoveredEntity) != null;

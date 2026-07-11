@@ -68,6 +68,23 @@ class GRAD_CatalogIndex
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Build progress in [0,1] for a loading bar. 0 before the queue is seeded, 1 when complete. While
+	//! building it is processed / (processed + remaining).
+	float GetProgress()
+	{
+		if (m_bComplete)
+			return 1.0;
+
+		int done = m_aRecords.Count();
+		int remaining = m_aWorkQueue.Count();
+		int total = done + remaining;
+		if (total <= 0)
+			return 0.0;
+
+		return done / (float)total;
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! All records (the full index). Caller must not mutate.
 	array<ref GRAD_ArsenalItemRecord> GetRecords()
 	{

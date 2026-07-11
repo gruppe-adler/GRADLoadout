@@ -220,12 +220,17 @@ class GRAD_InventoryLib
 	//! friendly label (the owning clothing item's short name) so the menu can present a destination
 	//! selector.
 	//!
-	//! A destination container is a storage whose OWNER is a worn item (not the character itself):
-	//! i.e. the vest entity carries the vest's pouch storage, the backpack entity carries its cargo
-	//! storage. The character's own loadout/identity/weapon storages (owner == character) are excluded
-	//! — those are fixed equip slots, not free cargo the player picks. Empty storages (zero slots) are
-	//! skipped. Order follows the storage walk (roughly top-down: vest, then backpack, then clothing).
-	static int CollectDestinationContainers(IEntity character, out notnull array<ref GRAD_ContainerRef> outContainers)
+	//! A destination container is a storage owned by a worn CARGO-BEARING garment: a backpack, vest,
+	//! jacket/uniform, or trousers. Identified by the owner item's arsenal type (via the catalog
+	//! index), so weapon/attachment storages (a rifle owns an attachments storage — NOT a cargo
+	//! container) are excluded. Character-owned storages (fixed loadout/identity slots) are excluded
+	//! too. Empty storages (zero slots) are skipped. Order follows the storage walk.
+	//!
+	//! `containerTypes` is the set of arsenal-type bits that count as cargo garments (see
+	//! GRAD_ContainerTypes.MASK). `typeForPrefab` maps an owner prefab -> its arsenal type; pass
+	//! GRAD_CatalogIndex.GetArsenalTypeForPrefab bound via the index (or a 0-returning stub to accept
+	//! nothing).
+	static int CollectDestinationContainers(IEntity character, GRAD_CatalogIndex index, out notnull array<ref GRAD_ContainerRef> outContainers)
 	{
 		outContainers.Clear();
 		if (!character)
@@ -235,17 +240,18 @@ class GRAD_InventoryLib
 		GetTopLevelStorages(character, roots);
 
 		foreach (BaseInventoryStorageComponent storage : roots)
-			CollectDestinationContainersRecursive(character, storage, outContainers, 0);
+			CollectDestinationContainersRecursive(character, index, storage, outContainers, 0);
 
 		return outContainers.Count();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Recursive worker for CollectDestinationContainers. Descends the storage graph; whenever a
-	//! storage's owner is a worn item (not the character) and it has slots, records it as a candidate
-	//! destination. Continues descending so a backpack nested in a vest slot is still found.
+	//! Recursive worker for CollectDestinationContainers. Descends the storage graph; records a storage
+	//! only when its owner is a cargo garment (backpack/vest/jacket/trousers by arsenal type) with
+	//! slots. Continues descending so a backpack nested in a vest slot is still found.
 	protected static void CollectDestinationContainersRecursive(
 		IEntity character,
+		GRAD_CatalogIndex index,
 		BaseInventoryStorageComponent storage,
 		notnull array<ref GRAD_ContainerRef> outContainers,
 		int depth)
@@ -253,13 +259,16 @@ class GRAD_InventoryLib
 		if (!storage || depth > 16)
 			return;
 
-		// A storage owned by a worn item (owner != character) and holding slots is a cargo container
-		// the player can target. Character-owned storages are the fixed loadout/weapon/identity slots.
 		IEntity owner = storage.GetOwner();
-		if (owner && owner != character && storage.GetSlotsCount() > 0)
+		if (owner && owner != character && storage.GetSlotsCount() > 0 && index)
 		{
-			string label = GetEntityShortName(owner);
-			outContainers.Insert(new GRAD_ContainerRef(storage, label, owner));
+			ResourceName ownerPrefab = GetPrefabResourceName(owner);
+			int ownerType = index.GetArsenalTypeForPrefab(ownerPrefab);
+			if ((ownerType & GRAD_ContainerTypes.MASK) != 0)
+			{
+				string label = GetEntityShortName(owner);
+				outContainers.Insert(new GRAD_ContainerRef(storage, label, owner));
+			}
 		}
 
 		// Descend into contained items that are themselves storages (backpack inside a slot, etc.).
@@ -272,8 +281,53 @@ class GRAD_InventoryLib
 
 			BaseInventoryStorageComponent childStorage = BaseInventoryStorageComponent.Cast(contained.FindComponent(BaseInventoryStorageComponent));
 			if (childStorage)
-				CollectDestinationContainersRecursive(character, childStorage, outContainers, depth + 1);
+				CollectDestinationContainersRecursive(character, index, childStorage, outContainers, depth + 1);
 		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	// Storage fill (for the loadout panel's fill bars)
+	//------------------------------------------------------------------------------------------------
+
+	//! Fill fraction [0,1] of a container storage by SLOT OCCUPANCY (occupied top-level slots / total).
+	//! Occupancy is used rather than weight because the verified storage weight API is limited; this is
+	//! a robust, always-available metric. Returns 0 for a null/zero-slot storage.
+	//!
+	//! NOTE: only counts the storage's OWN direct slots (not nested container contents), matching how a
+	//! player perceives "how full is my vest".
+	static float GetStorageFillFraction(BaseInventoryStorageComponent storage)
+	{
+		if (!storage)
+			return 0;
+
+		int total = storage.GetSlotsCount();
+		if (total <= 0)
+			return 0;
+
+		int used = 0;
+		for (int i = 0; i < total; i++)
+		{
+			if (storage.Get(i))
+				used++;
+		}
+
+		return used / (float)total;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether a container storage has at least one free direct slot (for enabling an ADD button).
+	static bool StorageHasFreeSlot(BaseInventoryStorageComponent storage)
+	{
+		if (!storage)
+			return false;
+
+		int total = storage.GetSlotsCount();
+		for (int i = 0; i < total; i++)
+		{
+			if (!storage.Get(i))
+				return true;
+		}
+		return false;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -502,6 +556,21 @@ class GRAD_SlotRef
 	{
 		return GetContent() == null;
 	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! Arsenal-type bits (SCR_EArsenalItemType) whose items carry a cargo storage the player can pour
+//! stackables into: backpack, jacket/uniform torso, vest & belt, trousers/legs, radio backpack.
+//! Weapons and their attachment storages are deliberately absent. Mirrors the labels in
+//! GRAD_ArsenalCategoryLabels.
+class GRAD_ContainerTypes
+{
+	static const int MASK =
+		  (1 << 7)    // BACKPACK
+		| (1 << 11)   // TORSO (jacket/uniform)
+		| (1 << 12)   // VEST_AND_WAIST
+		| (1 << 13)   // LEGS (trousers)
+		| (1 << 15);  // RADIO_BACKPACK
 }
 
 //------------------------------------------------------------------------------------------------
