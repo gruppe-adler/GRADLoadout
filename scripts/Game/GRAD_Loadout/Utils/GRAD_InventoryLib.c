@@ -212,6 +212,71 @@ class GRAD_InventoryLib
 	}
 
 	//------------------------------------------------------------------------------------------------
+	// Destination containers (for "choose where a stackable item goes")
+	//------------------------------------------------------------------------------------------------
+
+	//! Collect the worn cargo containers on a character that the arsenal can insert stackable items
+	//! into — the vest, backpack, uniform/jacket, trousers pockets, etc. Each is returned with a
+	//! friendly label (the owning clothing item's short name) so the menu can present a destination
+	//! selector.
+	//!
+	//! A destination container is a storage whose OWNER is a worn item (not the character itself):
+	//! i.e. the vest entity carries the vest's pouch storage, the backpack entity carries its cargo
+	//! storage. The character's own loadout/identity/weapon storages (owner == character) are excluded
+	//! — those are fixed equip slots, not free cargo the player picks. Empty storages (zero slots) are
+	//! skipped. Order follows the storage walk (roughly top-down: vest, then backpack, then clothing).
+	static int CollectDestinationContainers(IEntity character, out notnull array<ref GRAD_ContainerRef> outContainers)
+	{
+		outContainers.Clear();
+		if (!character)
+			return 0;
+
+		array<BaseInventoryStorageComponent> roots = {};
+		GetTopLevelStorages(character, roots);
+
+		foreach (BaseInventoryStorageComponent storage : roots)
+			CollectDestinationContainersRecursive(character, storage, outContainers, 0);
+
+		return outContainers.Count();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Recursive worker for CollectDestinationContainers. Descends the storage graph; whenever a
+	//! storage's owner is a worn item (not the character) and it has slots, records it as a candidate
+	//! destination. Continues descending so a backpack nested in a vest slot is still found.
+	protected static void CollectDestinationContainersRecursive(
+		IEntity character,
+		BaseInventoryStorageComponent storage,
+		notnull array<ref GRAD_ContainerRef> outContainers,
+		int depth)
+	{
+		if (!storage || depth > 16)
+			return;
+
+		// A storage owned by a worn item (owner != character) and holding slots is a cargo container
+		// the player can target. Character-owned storages are the fixed loadout/weapon/identity slots.
+		IEntity owner = storage.GetOwner();
+		if (owner && owner != character && storage.GetSlotsCount() > 0)
+		{
+			string label = GetEntityShortName(owner);
+			outContainers.Insert(new GRAD_ContainerRef(storage, label, owner));
+		}
+
+		// Descend into contained items that are themselves storages (backpack inside a slot, etc.).
+		int slotCount = storage.GetSlotsCount();
+		for (int slotId = 0; slotId < slotCount; slotId++)
+		{
+			IEntity contained = storage.Get(slotId);
+			if (!contained)
+				continue;
+
+			BaseInventoryStorageComponent childStorage = BaseInventoryStorageComponent.Cast(contained.FindComponent(BaseInventoryStorageComponent));
+			if (childStorage)
+				CollectDestinationContainersRecursive(character, childStorage, outContainers, depth + 1);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
 	// Item collection & counting
 	//------------------------------------------------------------------------------------------------
 
@@ -436,5 +501,24 @@ class GRAD_SlotRef
 	bool IsEmpty()
 	{
 		return GetContent() == null;
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! A worn cargo container the arsenal can target: the storage to insert into plus a friendly label
+//! (the owning clothing item's short name) and the owner item entity. Produced by
+//! GRAD_InventoryLib.CollectDestinationContainers; consumed by the menu's destination selector.
+class GRAD_ContainerRef : Managed
+{
+	BaseInventoryStorageComponent m_Storage;
+	string m_sLabel;
+	IEntity m_Owner;
+
+	//------------------------------------------------------------------------------------------------
+	void GRAD_ContainerRef(BaseInventoryStorageComponent storage, string label, IEntity owner)
+	{
+		m_Storage = storage;
+		m_sLabel = label;
+		m_Owner = owner;
 	}
 }

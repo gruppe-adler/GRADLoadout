@@ -75,6 +75,12 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	// collapsed; persists across re-populates so toggling one group doesn't reset the others.
 	protected ref map<string, bool> m_mExpandedGroups = new map<string, bool>();
 
+	// Destination container selection (stackable categories only). m_SelectedDestStorage null = Auto
+	// (engine chooses the storage). When set, clicked/+'d stackable items go into this container.
+	// Rebuilt from the live preview kit each time PopulateItems renders a stackable category.
+	protected BaseInventoryStorageComponent m_SelectedDestStorage;
+	protected ref array<ref GRAD_ContainerRef> m_aDestContainers = {};
+
 	//------------------------------------------------------------------------------------------------
 	//! Stash the context that the next OpenMenu(GRAD_ArsenalMenu) call should pick up.
 	static void SetPendingContext(GRAD_ArsenalMenuContext context)
@@ -186,10 +192,16 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			PinPreviewAlive();
 		}
 
-		// Mouse orbit + wheel zoom on the preview.
+		// Mouse orbit + wheel zoom on the preview. Constructing the helper is not enough: it is a
+		// ScriptedWidgetEventHandler, so its OnMouseButtonDown/Up/Wheel only fire once it is registered
+		// as an event handler on the preview widget. Without AddHandler no mouse input reaches it and
+		// the character never rotates. The widget must also accept pointer input (see layout).
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (m_wPreview && workspace)
+		{
 			m_PreviewCameraHelper = new SCR_InventoryCharacterWidgetHelper(m_wPreview, workspace);
+			m_wPreview.AddHandler(m_PreviewCameraHelper);
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -226,7 +238,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//------------------------------------------------------------------------------------------------
 	//! Apply a single-item loadout to the preview clone, re-activating it for the duration of the
 	//! mutation (some inventory operations expect an active entity) and re-pinning it afterwards.
-	protected void ApplyToPreview(notnull GRAD_LoadoutData data)
+	protected void ApplyToPreview(notnull GRAD_LoadoutData data, BaseInventoryStorageComponent preferredStorage = null)
 	{
 		if (!m_PreviewCharacter)
 			return;
@@ -236,8 +248,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			ge.Activate();
 
 		// clearFirst=false: this is an ADDITIVE single-item add; do not strip the existing kit.
+		// preferredStorage (may be null) routes a stackable item into the chosen destination container.
 		array<IEntity> created = {};
-		GRAD_LoadoutApply.Apply(m_PreviewCharacter, data, true, false, created, false);
+		GRAD_LoadoutApply.Apply(m_PreviewCharacter, data, true, false, created, false, preferredStorage);
 		foreach (IEntity e : created)
 			m_aPreviewCreated.Insert(e);
 
@@ -378,6 +391,12 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			eh.m_iActiveCategoryType = activeType;
 			m_aItemRowHandlers.Insert(eh);
 		}
+
+		// Stackable categories (ammo, grenades, meds, ...) get a destination-container selector so the
+		// player chooses which worn container the items go into (vest / backpack / uniform), instead of
+		// the engine picking. Single-slot categories (clothing, weapons) auto-equip and need no selector.
+		if (stackable)
+			PopulateDestinationSelector();
 
 		// Build the grouped (by base name) list. A group with one item renders as a plain row; a
 		// group with several renders a collapsible header + (when expanded) its variant rows.
@@ -524,6 +543,74 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Render the destination-container selector strip: an "Auto" row plus one row per worn container
+	//! on the preview (vest, backpack, uniform, ...). The active choice is marked. Clicking a row sets
+	//! m_SelectedDestStorage and rebuilds. Rebuilt from the live kit every call, so equipping a new
+	//! backpack/vest makes it available (and dropping the selected one falls back to Auto).
+	protected void PopulateDestinationSelector()
+	{
+		m_aDestContainers.Clear();
+		if (m_PreviewCharacter)
+			GRAD_InventoryLib.CollectDestinationContainers(m_PreviewCharacter, m_aDestContainers);
+
+		// If the previously-selected storage is gone (container removed), fall back to Auto.
+		if (m_SelectedDestStorage && !ContainerStillPresent(m_SelectedDestStorage))
+			m_SelectedDestStorage = null;
+
+		// "Auto" row (engine chooses) — always available, default.
+		CreateDestRow("Destination: Auto", null, m_SelectedDestStorage == null);
+
+		foreach (GRAD_ContainerRef c : m_aDestContainers)
+		{
+			if (!c || !c.m_Storage)
+				continue;
+
+			bool selected = (c.m_Storage == m_SelectedDestStorage);
+			CreateDestRow("  → " + c.m_sLabel, c.m_Storage, selected);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether a storage is still among the preview's live destination containers.
+	protected bool ContainerStillPresent(BaseInventoryStorageComponent storage)
+	{
+		foreach (GRAD_ContainerRef c : m_aDestContainers)
+		{
+			if (c && c.m_Storage == storage)
+				return true;
+		}
+		return false;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One destination-selector row. `selected` prefixes a marker so the active choice is obvious.
+	protected void CreateDestRow(string label, BaseInventoryStorageComponent storage, bool selected)
+	{
+		string text = label;
+		if (selected)
+			text = "[x]" + label;
+		else
+			text = "[ ]" + label;
+
+		Widget row = CreateRow(m_wItemList, text);
+		if (!row)
+			return;
+
+		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
+		handler.m_bIsDestSelect = true;
+		handler.m_DestStorage = storage;
+		m_aItemRowHandlers.Insert(handler);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Set the active destination container (null = Auto) and rebuild the list to refresh the marker.
+	void OnDestSelected(BaseInventoryStorageComponent storage)
+	{
+		m_SelectedDestStorage = storage;
+		PopulateItems();
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! Plain click-to-equip row for a single-slot item.
 	protected void CreateItemRow(notnull GRAD_ArsenalItemRecord rec, string labelOverride = string.Empty)
 	{
@@ -657,7 +744,8 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(record.m_sPrefab, -1, string.Empty, 1);
 			GRAD_LoadoutData single = new GRAD_LoadoutData();
 			single.m_Root.AddChild(entry);
-			ApplyToPreview(single);
+			// Route into the chosen destination container (null = Auto / engine choice).
+			ApplyToPreview(single, m_SelectedDestStorage);
 		}
 		else if (delta < 0)
 		{
@@ -907,6 +995,8 @@ class GRAD_ArsenalRowHandler
 	int m_iActiveCategoryType;			//!< category type bit this row's [Empty] should clear
 	bool m_bIsGroupHeader;				//!< collapsible base-name group header row
 	string m_sGroupKey;					//!< group label this header toggles (when m_bIsGroupHeader)
+	bool m_bIsDestSelect;				//!< destination-container selector row
+	BaseInventoryStorageComponent m_DestStorage;	//!< container this row selects (null = Auto)
 
 	//! For quantity rows: the count label to refresh after +/- (null on plain rows).
 	TextWidget m_wCountLabel;
@@ -947,7 +1037,9 @@ class GRAD_ArsenalRowHandler
 		if (!m_Menu)
 			return;
 
-		if (m_bIsGroupHeader)
+		if (m_bIsDestSelect)
+			m_Menu.OnDestSelected(m_DestStorage);
+		else if (m_bIsGroupHeader)
 			m_Menu.OnGroupHeaderClicked(m_sGroupKey);
 		else if (m_bIsEmptyRow)
 			m_Menu.OnEmptyRowClicked(m_iActiveCategoryType);

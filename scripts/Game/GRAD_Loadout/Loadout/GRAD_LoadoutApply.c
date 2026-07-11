@@ -30,7 +30,13 @@ class GRAD_LoadoutApply
 	//!                      restore / OK confirm); false = ADD the data on top of the current kit
 	//!                      without clearing (single-item click in the arsenal). Defaults to true to
 	//!                      preserve the full-loadout behavior.
-	static bool Apply(IEntity target, GRAD_LoadoutData data, bool localOnly, bool force, out notnull array<IEntity> outCreated, bool clearFirst = true)
+	//! \param preferredStorage  when non-null, TOP-LEVEL entries are inserted into this specific
+	//!                      storage first (the arsenal's "choose destination container" for stackable
+	//!                      items — a mag into the chosen vest/backpack). Falls back to the normal
+	//!                      equip/insert path when the item can't fit there. Null = today's behavior
+	//!                      (engine chooses the storage). Only honored on the LOCAL preview path; the
+	//!                      replicated path is unaffected.
+	static bool Apply(IEntity target, GRAD_LoadoutData data, bool localOnly, bool force, out notnull array<IEntity> outCreated, bool clearFirst = true, BaseInventoryStorageComponent preferredStorage = null)
 	{
 		outCreated.Clear();
 
@@ -81,7 +87,7 @@ class GRAD_LoadoutApply
 		int spawned = 0;
 		int skipped = 0;
 		foreach (GRAD_LoadoutEntry child : data.m_Root.m_aChildren)
-			ApplyEntry(manager, child, topStorages, localOnly, outCreated, spawned, skipped, 0);
+			ApplyEntry(manager, child, topStorages, localOnly, outCreated, spawned, skipped, 0, preferredStorage);
 
 		GRAD_Log.Info(string.Format("Apply: spawned %1 items, skipped %2 (localOnly=%3)", spawned, skipped, localOnly));
 		return true;
@@ -98,7 +104,8 @@ class GRAD_LoadoutApply
 		notnull array<IEntity> outCreated,
 		inout int spawned,
 		inout int skipped,
-		int depth)
+		int depth,
+		BaseInventoryStorageComponent preferredStorage = null)
 	{
 		if (!entry || depth > 16)
 			return;
@@ -115,10 +122,17 @@ class GRAD_LoadoutApply
 		// first candidate (which is the identity storage and rejects everything).
 		BaseInventoryStorageComponent storage = PickStorage(candidateStorages, entry.m_sStorageClass);
 
+		// A caller-chosen destination container (arsenal "put this in the vest/backpack") applies only
+		// to TOP-LEVEL entries — nested children still go into their own parent's storage. It takes
+		// precedence over the class-matched storage for placement.
+		BaseInventoryStorageComponent preferred = null;
+		if (depth == 0)
+			preferred = preferredStorage;
+
 		// `created` may be null even on success: engine-chosen placement spawns the item but does
 		// not hand it back, so we can't always locate it. `spawnedOk` is the authoritative result.
 		bool spawnedOk;
-		IEntity created = SpawnInto(manager, storage, entry, localOnly, spawnedOk);
+		IEntity created = SpawnInto(manager, storage, entry, localOnly, spawnedOk, preferred);
 		if (!spawnedOk)
 		{
 			// SpawnInto already logged the reason (missing prefab, no room, etc.).
@@ -169,7 +183,8 @@ class GRAD_LoadoutApply
 		BaseInventoryStorageComponent storage,
 		notnull GRAD_LoadoutEntry entry,
 		bool localOnly,
-		out bool spawnedOk)
+		out bool spawnedOk,
+		BaseInventoryStorageComponent preferredStorage = null)
 	{
 		spawnedOk = false;
 		ResourceName prefab = entry.m_sPrefab;
@@ -181,8 +196,14 @@ class GRAD_LoadoutApply
 			if (!item)
 				return null;
 
-			bool inserted;
-			if (storage)
+			bool inserted = false;
+
+			// Caller-chosen destination container wins: try it first (arsenal "put this in the vest").
+			// Falls through to the normal paths if the item won't fit there (full/incompatible).
+			if (preferredStorage)
+				inserted = manager.TryInsertItemInStorage(item, preferredStorage, -1);
+
+			if (!inserted && storage)
 			{
 				// Captured slot address: place at the recorded slot, else any free slot in it.
 				inserted = manager.TryInsertItemInStorage(item, storage, entry.m_iSlotIndex);
