@@ -1,5 +1,8 @@
 HorizontalLayoutWidgetClass {
  Name "LoadoutLine"
+ Slot LayoutSlot {
+  Padding 0 4 0 4
+ }
  {
   ButtonWidgetClass "{C1D2E3F401020305}" {
    Name "LineMinus"
@@ -17,11 +20,11 @@ HorizontalLayoutWidgetClass {
     SizeLayoutWidgetClass "{C1D2E3F401020308}" {
      Name "MinusSize"
      AllowWidthOverride 1
-     WidthOverride 20
+     WidthOverride 32
      AllowHeightOverride 1
-     HeightOverride 18
-     MinDesiredWidth 20
-     MinDesiredHeight 18
+     HeightOverride 28
+     MinDesiredWidth 32
+     MinDesiredHeight 28
      {
       OverlayWidgetClass "{C1D2E3F401020309}" {
        Name "MinusStack"
@@ -74,11 +77,11 @@ HorizontalLayoutWidgetClass {
     SizeLayoutWidgetClass "{C1D2E3F401020311}" {
      Name "PlusSize"
      AllowWidthOverride 1
-     WidthOverride 20
+     WidthOverride 32
      AllowHeightOverride 1
-     HeightOverride 18
-     MinDesiredWidth 20
-     MinDesiredHeight 18
+     HeightOverride 28
+     MinDesiredWidth 32
+     MinDesiredHeight 28
      {
       OverlayWidgetClass "{C1D2E3F401020312}" {
        Name "PlusStack"

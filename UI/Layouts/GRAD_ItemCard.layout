@@ -1,26 +1,25 @@
-ButtonWidgetClass {
- Name "CardButton"
- style blank
- components {
-  SCR_InputButtonComponent "{A0000000000000B2}" {
-   m_sActionName "MenuSelect"
-  }
- }
+SizeLayoutWidgetClass {
+ Name "TileSize"
+ AllowWidthOverride 1
+ WidthOverride 220
+ AllowHeightOverride 1
+ HeightOverride 180
+ MinDesiredWidth 220
+ MinDesiredHeight 180
+ MaxDesiredWidth 220
+ MaxDesiredHeight 180
  {
-  SizeLayoutWidgetClass "{A0000000000000A1}" {
-   Name "TileSize"
-   Slot ButtonWidgetSlot "{A0000000000000A2}" {
-    HorizontalAlign 3
-    VerticalAlign 3
+  ButtonWidgetClass "{A0000000000000A1}" {
+   Name "CardButton"
+   style blank
+   components {
+    SCR_InputButtonComponent "{A0000000000000B2}" {
+     m_sActionName "MenuSelect"
+    }
    }
-   AllowWidthOverride 1
-   WidthOverride 150
-   AllowHeightOverride 1
-   HeightOverride 116
-   MinDesiredWidth 150
-   MinDesiredHeight 116
-   MaxDesiredWidth 150
-   MaxDesiredHeight 116
+   Slot LayoutSlot "{A0000000000000A2}" {
+    SizeMode Fill
+   }
    {
     OverlayWidgetClass "{A0000000000000B3}" {
      Name "TileStack"
@@ -40,21 +39,48 @@ ButtonWidgetClass {
         VerticalAlign 3
        }
        {
-        ImageWidgetClass "{A0000000000000A4}" {
-         Name "CardIcon"
-         Slot LayoutSlot "{A0000000000000A5}" {
+        SizeLayoutWidgetClass "{A0000000000000C1}" {
+         Name "CardIconSize"
+         Slot LayoutSlot "{A0000000000000C2}" {
           Padding 6 6 6 2
           HorizontalAlign 3
          }
-         Color 1 1 1 1
-        }
-        TextWidgetClass "{A0000000000000A6}" {
-         Name "CardName"
-         Slot LayoutSlot "{A0000000000000A7}" {
-          Padding 4 0 4 0
+         AllowWidthOverride 1
+         WidthOverride 96
+         AllowHeightOverride 1
+         HeightOverride 96
+         MinDesiredWidth 96
+         MinDesiredHeight 96
+         {
+          ImageWidgetClass "{A0000000000000A4}" {
+           Name "CardIcon"
+           Slot LayoutSlot "{A0000000000000A5}" {
+            SizeMode Fill
+           }
+           Color 1 1 1 1
+          }
          }
-         Text ""
-         "Horizontal Alignment" Center
+        }
+        SizeLayoutWidgetClass "{A0000000000000C3}" {
+         Name "CardNameSize"
+         Slot LayoutSlot "{A0000000000000C4}" {
+          Padding 4 0 4 0
+          SizeMode Fill
+         }
+         AllowHeightOverride 1
+         HeightOverride 40
+         MinDesiredHeight 40
+         {
+          TextWidgetClass "{A0000000000000A6}" {
+           Name "CardName"
+           Slot LayoutSlot "{A0000000000000A7}" {
+            SizeMode Fill
+           }
+           Text ""
+           "Horizontal Alignment" Center
+           "Vertical Alignment" Center
+          }
+         }
         }
         TextWidgetClass "{A0000000000000A8}" {
          Name "CardCount"

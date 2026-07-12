@@ -26,7 +26,7 @@ FrameWidgetClass {
    {
     TextWidgetClass "{23B7B4E324FF39F3}" {
      Name "Title"
-     Slot LayoutSlot {
+     Slot LayoutSlot "{69D8F07721AA8DA0}" {
      }
      Text "GRADle"
      "Horizontal Alignment" Center
@@ -37,20 +37,20 @@ FrameWidgetClass {
     }
     HorizontalLayoutWidgetClass "{69D8AB9E032DEF35}" {
      Name "Content"
-     Slot LayoutSlot {
+     Slot LayoutSlot "{69D8F07721AA8D53}" {
       SizeMode Fill
      }
      {
       VerticalLayoutWidgetClass "{69D8AB9BBEE88ABA}" {
        Name "PaneLeftCategories"
-       Slot LayoutSlot {
+       Slot LayoutSlot "{69D8F07721AA8BAC}" {
         SizeMode Fill
        }
        {
         VerticalLayoutWidgetClass "{2512F4AB6CC30301}" : "{D1CAF877446C66DE}UI/layouts/WidgetLibrary/TabView/WLib_TabViewCoreMenus.layout" {
          Name "CategoryTabView"
          Slot LayoutSlot "{589F093AB3EA94D8}" {
-          SizeMode Auto
+          SizeMode Fill
          }
          Clipping True
          components {
@@ -80,6 +80,8 @@ FrameWidgetClass {
            m_bKeepHiddenTabs 1
            m_bCreateAllTabsAtStart 1
            m_bCycleMode 0
+           m_sActionLeft "MenuTabLeft"
+           m_sActionRight "MenuTabRight"
           }
          }
          {
@@ -123,43 +125,232 @@ FrameWidgetClass {
           }
          }
         }
-        OverlayWidgetClass "{11111111AAAA0001}" {
-         Name "SelectedPanel"
-         Slot LayoutSlot {
-          VerticalAlign 3
-          Padding 0 0 0 0
-          SizeMode Fill
-         }
-         "Is Enabled" 0
-         "Is Visible" 0
-         {
-          ImageWidgetClass "{11111111AAAA0003}" {
-           Name "SelBg"
-           Color 0.5608 0.0706 0.0706 1
-          }
-          ImageWidgetClass "{11111111AAAA0005}" {
-           Name "SelIcon"
-           Color 1 1 1 1
-          }
-          TextWidgetClass "{11111111AAAA0007}" {
-           Name "SelName"
-           Text ""
-          }
-          TextWidgetClass "{11111111AAAA0009}" {
-           Name "SelStats"
-           Text ""
-          }
-         }
-        }
         GridLayoutWidgetClass "{69D8AB992B1E8B52}" {
          Name "CategoryItems"
          Slot LayoutSlot "{69D8AB992B1E8AB2}" {
+          Padding 0 20 0 0
           SizeMode Fill
+         }
+         {
+          // PREVIEW-ONLY sample row: GridLayoutWidgetClass has no static column-weight property (only
+          // runtime SetColumnFillWeight), and Workbench's own save strips a bare "Slot GridSlot" from
+          // a grid child on reimport — so a real GridSlot placement can't be eyeballed here statically.
+          // Wrapping the two samples in a HorizontalLayoutWidgetClass sidesteps that: it lays out
+          // children left-to-right with no slot/weight requirements, so it survives Workbench's save
+          // and actually renders side-by-side. Delete this whole wrapper once real PopulateItems()
+          // rendering is confirmed (PopulateItems() ClearChildren()s CategoryItems first anyway).
+          HorizontalLayoutWidgetClass "{5A4D1E00CCCC0000}" {
+           Name "SampleCardRow"
+           {
+          ButtonWidgetClass "{5A4D1E00AAAA0001}" {
+           Name "SampleCardUnselected"
+           components {
+            SCR_InputButtonComponent "{5A4D1E00AAAA0003}" {
+             m_sActionName "MenuSelect"
+            }
+           }
+           style blank
+           {
+            SizeLayoutWidgetClass "{5A4D1E00AAAA0004}" {
+             Name "TileSize"
+             Slot ButtonWidgetSlot "{5A4D1E00AAAA0005}" {
+              HorizontalAlign 3
+              VerticalAlign 3
+             }
+             AllowWidthOverride 1
+             WidthOverride 220
+             AllowHeightOverride 1
+             HeightOverride 180
+             MinDesiredWidth 220
+             MinDesiredHeight 180
+             MaxDesiredWidth 220
+             MaxDesiredHeight 180
+             {
+              OverlayWidgetClass "{5A4D1E00AAAA0006}" {
+               Name "TileStack"
+               {
+                ImageWidgetClass "{5A4D1E00AAAA0007}" {
+                 Name "TileBg"
+                 Slot OverlayWidgetSlot "{5A4D1E00AAAA0008}" {
+                  HorizontalAlign 3
+                  VerticalAlign 3
+                 }
+                 Color 0.1 0.11 0.13 0.9
+                }
+                VerticalLayoutWidgetClass "{5A4D1E00AAAA0009}" {
+                 Name "TileContent"
+                 Slot OverlayWidgetSlot "{5A4D1E00AAAA000A}" {
+                  HorizontalAlign 3
+                  VerticalAlign 3
+                 }
+                 {
+                  SizeLayoutWidgetClass "{5A4D1E00AAAA000B}" {
+                   Name "CardIconSize"
+                   Slot LayoutSlot "{5A4D1E00AAAA000C}" {
+                    HorizontalAlign 3
+                    Padding 6 6 6 2
+                   }
+                   AllowWidthOverride 1
+                   WidthOverride 96
+                   AllowHeightOverride 1
+                   HeightOverride 96
+                   MinDesiredWidth 96
+                   MinDesiredHeight 96
+                   {
+                    ImageWidgetClass "{5A4D1E00AAAA000D}" {
+                     Name "CardIcon"
+                     Slot LayoutSlot "{5A4D1E00AAAA000E}" {
+                      SizeMode Fill
+                     }
+                     Color 1 1 1 1
+                    }
+                   }
+                  }
+                  SizeLayoutWidgetClass "{5A4D1E00AAAA0020}" {
+                   Name "CardNameSize"
+                   Slot LayoutSlot "{5A4D1E00AAAA0010}" {
+                    Padding 4 0 4 0
+                    SizeMode Fill
+                   }
+                   AllowHeightOverride 1
+                   HeightOverride 40
+                   MinDesiredHeight 40
+                   {
+                    TextWidgetClass "{5A4D1E00AAAA000F}" {
+                     Name "CardName"
+                     Slot LayoutSlot "{5A4D1E00AAAA0021}" {
+                      SizeMode Fill
+                     }
+                     Text "M16A2"
+                     "Horizontal Alignment" Center
+                     "Vertical Alignment" Center
+                    }
+                   }
+                  }
+                  TextWidgetClass "{5A4D1E00AAAA0011}" {
+                   Name "CardCount"
+                   Slot LayoutSlot "{5A4D1E00AAAA0012}" {
+                    Padding 4 0 4 4
+                   }
+                   Text "1"
+                   "Horizontal Alignment" Center
+                  }
+                 }
+                }
+               }
+              }
+             }
+            }
+           }
+          }
+          ButtonWidgetClass "{5A4D1E00BBBB0001}" {
+           Name "SampleCardSelected"
+           components {
+            SCR_InputButtonComponent "{5A4D1E00BBBB0003}" {
+             m_sActionName "MenuSelect"
+            }
+           }
+           style blank
+           {
+            SizeLayoutWidgetClass "{5A4D1E00BBBB0004}" {
+             Name "TileSize"
+             Slot ButtonWidgetSlot "{5A4D1E00BBBB0005}" {
+              HorizontalAlign 3
+              VerticalAlign 3
+             }
+             AllowWidthOverride 1
+             WidthOverride 220
+             AllowHeightOverride 1
+             HeightOverride 180
+             MinDesiredWidth 220
+             MinDesiredHeight 180
+             MaxDesiredWidth 220
+             MaxDesiredHeight 180
+             {
+              OverlayWidgetClass "{5A4D1E00BBBB0006}" {
+               Name "TileStack"
+               {
+                ImageWidgetClass "{5A4D1E00BBBB0007}" {
+                 Name "TileBg"
+                 Slot OverlayWidgetSlot "{5A4D1E00BBBB0008}" {
+                  HorizontalAlign 3
+                  VerticalAlign 3
+                 }
+                 Color 0.55 0.4 0.1 0.9
+                }
+                VerticalLayoutWidgetClass "{5A4D1E00BBBB0009}" {
+                 Name "TileContent"
+                 Slot OverlayWidgetSlot "{5A4D1E00BBBB000A}" {
+                  HorizontalAlign 3
+                  VerticalAlign 3
+                 }
+                 {
+                  SizeLayoutWidgetClass "{5A4D1E00BBBB000B}" {
+                   Name "CardIconSize"
+                   Slot LayoutSlot "{5A4D1E00BBBB000C}" {
+                    HorizontalAlign 3
+                    Padding 6 6 6 2
+                   }
+                   AllowWidthOverride 1
+                   WidthOverride 96
+                   AllowHeightOverride 1
+                   HeightOverride 96
+                   MinDesiredWidth 96
+                   MinDesiredHeight 96
+                   {
+                    ImageWidgetClass "{5A4D1E00BBBB000D}" {
+                     Name "CardIcon"
+                     Slot LayoutSlot "{5A4D1E00BBBB000E}" {
+                      SizeMode Fill
+                     }
+                     Color 1 1 1 1
+                    }
+                   }
+                  }
+                  SizeLayoutWidgetClass "{5A4D1E00BBBB0020}" {
+                   Name "CardNameSize"
+                   Slot LayoutSlot "{5A4D1E00BBBB0010}" {
+                    Padding 4 0 4 0
+                    SizeMode Fill
+                   }
+                   AllowHeightOverride 1
+                   HeightOverride 40
+                   MinDesiredHeight 40
+                   {
+                    TextWidgetClass "{5A4D1E00BBBB000F}" {
+                     Name "CardName"
+                     Slot LayoutSlot "{5A4D1E00BBBB0021}" {
+                      SizeMode Fill
+                     }
+                     Text "M21 SWS longer sample text to show wrapping"
+                     "Horizontal Alignment" Center
+                     "Vertical Alignment" Center
+                    }
+                   }
+                  }
+                  TextWidgetClass "{5A4D1E00BBBB0011}" {
+                   Name "CardCount"
+                   Slot LayoutSlot "{5A4D1E00BBBB0012}" {
+                    Padding 4 0 4 4
+                   }
+                   Text "3"
+                   "Horizontal Alignment" Center
+                  }
+                 }
+                }
+               }
+              }
+             }
+            }
+           }
+          }
+           }
+          }
          }
         }
         HorizontalLayoutWidgetClass "{11111111AAAA000B}" {
          Name "SelButtons"
-         Slot LayoutSlot {
+         Slot LayoutSlot "{69D8F07721AB6E58}" {
           Padding 0 0 0 0
           SizeMode Auto
          }
@@ -203,19 +394,19 @@ FrameWidgetClass {
       }
       ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
        Name "PaneCenterPreview"
-       Slot LayoutSlot {
+       Slot LayoutSlot "{69D8F07721AB6FD1}" {
         SizeMode Fill
        }
       }
       VerticalLayoutWidgetClass "{69D8AB991B87BFBA}" {
        Name "PaneRightContainer"
-       Slot LayoutSlot {
+       Slot LayoutSlot "{69D8F07721AB6FC5}" {
         SizeMode Fill
        }
        {
         VerticalLayoutWidgetClass "{22222222BBBB0001}" {
          Name "LoadoutPanel"
-         Slot LayoutSlot {
+         Slot LayoutSlot "{69D8F07721AB6FC9}" {
           Padding 0 0 20 0
           SizeMode Fill
          }
@@ -286,7 +477,7 @@ FrameWidgetClass {
           }
           VerticalLayoutWidgetClass "{22222222BBBB0036}" {
            Name "BackpackContents"
-           Slot LayoutSlot {
+           Slot LayoutSlot "{69D8F07721AB6F32}" {
            }
           }
           HorizontalLayoutWidgetClass "{69D8AB9AD14173C3}" {
@@ -364,7 +555,7 @@ FrameWidgetClass {
           }
           HorizontalLayoutWidgetClass "{6334089205A39504}" {
            Name "ButtonBarGlobal"
-           Slot LayoutSlot {
+           Slot LayoutSlot "{69D8F07721AB6C74}" {
             HorizontalAlign 2
            }
            {
