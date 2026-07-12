@@ -1,5 +1,5 @@
 MetaFileClass {
- Name "{75C912A1C89BE6C3}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout"
+ Name "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout"
  Configurations {
   LayoutResourceClass PC {
   }

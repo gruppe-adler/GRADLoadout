@@ -1,0 +1,8 @@
+ScrollLayoutWidgetClass {
+ Name "CategoryPaneRoot"
+ {
+  GridLayoutWidgetClass "{D2000000000000A1}" {
+   Name "ItemGrid"
+  }
+ }
+}

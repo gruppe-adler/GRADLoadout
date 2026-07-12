@@ -1,0 +1,117 @@
+HorizontalLayoutWidgetClass {
+ Name "LoadoutLine"
+ {
+  ButtonWidgetClass "{C1D2E3F401020305}" {
+   Name "LineMinus"
+   style blank
+   Slot LayoutSlot "{C1D2E3F401020306}" {
+    Padding 0 0 4 0
+    VerticalAlign 3
+   }
+   components {
+    SCR_InputButtonComponent "{C1D2E3F401020307}" {
+     m_sActionName "MenuSelect"
+    }
+   }
+   {
+    SizeLayoutWidgetClass "{C1D2E3F401020308}" {
+     Name "MinusSize"
+     AllowWidthOverride 1
+     WidthOverride 20
+     AllowHeightOverride 1
+     HeightOverride 18
+     MinDesiredWidth 20
+     MinDesiredHeight 18
+     {
+      OverlayWidgetClass "{C1D2E3F401020309}" {
+       Name "MinusStack"
+       {
+        ImageWidgetClass "{C1D2E3F40102030A}" {
+         Name "MinusBg"
+         Slot OverlayWidgetSlot "{C1D2E3F40102030B}" {
+          HorizontalAlign 3
+          VerticalAlign 3
+         }
+         Color 0.18 0.2 0.24 0.9
+        }
+        TextWidgetClass "{C1D2E3F40102030C}" {
+         Name "MinusLabel"
+         Slot OverlayWidgetSlot "{C1D2E3F40102030D}" {
+          HorizontalAlign 3
+          VerticalAlign 3
+         }
+         Text "-"
+         "Horizontal Alignment" Center
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  TextWidgetClass "{C1D2E3F401020320}" {
+   Name "LineCount"
+   Slot LayoutSlot "{C1D2E3F401020321}" {
+    Padding 0 0 4 0
+    VerticalAlign 3
+   }
+   Text "0"
+   "Horizontal Alignment" Center
+  }
+  ButtonWidgetClass "{C1D2E3F40102030E}" {
+   Name "LinePlus"
+   style blank
+   Slot LayoutSlot "{C1D2E3F40102030F}" {
+    Padding 0 0 6 0
+    VerticalAlign 3
+   }
+   components {
+    SCR_InputButtonComponent "{C1D2E3F401020310}" {
+     m_sActionName "MenuSelect"
+    }
+   }
+   {
+    SizeLayoutWidgetClass "{C1D2E3F401020311}" {
+     Name "PlusSize"
+     AllowWidthOverride 1
+     WidthOverride 20
+     AllowHeightOverride 1
+     HeightOverride 18
+     MinDesiredWidth 20
+     MinDesiredHeight 18
+     {
+      OverlayWidgetClass "{C1D2E3F401020312}" {
+       Name "PlusStack"
+       {
+        ImageWidgetClass "{C1D2E3F401020313}" {
+         Name "PlusBg"
+         Slot OverlayWidgetSlot "{C1D2E3F401020314}" {
+          HorizontalAlign 3
+          VerticalAlign 3
+         }
+         Color 0.18 0.2 0.24 0.9
+        }
+        TextWidgetClass "{C1D2E3F401020315}" {
+         Name "PlusLabel"
+         Slot OverlayWidgetSlot "{C1D2E3F401020316}" {
+          HorizontalAlign 3
+          VerticalAlign 3
+         }
+         Text "+"
+         "Horizontal Alignment" Center
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  TextWidgetClass "{C1D2E3F401020317}" {
+   Name "LineLabel"
+   Slot LayoutSlot "{C1D2E3F401020318}" {
+    VerticalAlign 3
+   }
+   Text ""
+  }
+ }
+}

@@ -27,14 +27,43 @@ FrameWidgetClass {
    "Horizontal Alignment" Center
    "Vertical Alignment" Center
   }
-  HorizontalLayoutWidgetClass "{2512F4AB6CC303A8}" {
-   Name "CategoryList"
+  VerticalLayoutWidgetClass "{2512F4AB6CC30301}" : "{D1CAF877446C66DE}UI/layouts/WidgetLibrary/TabView/WLib_TabViewCoreMenus.layout" {
+   Name "CategoryTabView"
    Slot FrameWidgetSlot "{441885F0C574F5D2}" {
-    Anchor 0 0 0 0
+    Anchor 0 0 0.34 1
     OffsetLeft 40
     OffsetTop 72
-    SizeX 560
-    SizeY 56
+    OffsetRight -8
+    OffsetBottom -80
+   }
+   components {
+    SCR_TabViewComponent "{2512F4AB6CC303A8}" {
+     m_aElements {
+      SCR_TabViewContent {
+       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+       m_sTabButtonContent "Primary"
+      }
+      SCR_TabViewContent {
+       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+       m_sTabButtonContent "Secondary"
+      }
+      SCR_TabViewContent {
+       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+       m_sTabButtonContent "Throwables"
+      }
+      SCR_TabViewContent {
+       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+       m_sTabButtonContent "Apparel"
+      }
+      SCR_TabViewContent {
+       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+       m_sTabButtonContent "Container"
+      }
+     }
+     m_bKeepHiddenTabs 1
+     m_bCreateAllTabsAtStart 1
+     m_bCycleMode 0
+    }
    }
   }
   ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
@@ -45,22 +74,6 @@ FrameWidgetClass {
     OffsetTop 80
     OffsetRight 0
     OffsetBottom -80
-   }
-  }
-  ScrollLayoutWidgetClass "{41F27C3A98AEAEF0}" {
-   Name "ItemListScroll"
-   Slot FrameWidgetSlot "{3E6D7791BD5E4247}" {
-    Anchor 0 0 0.34 1
-    OffsetLeft 40
-    OffsetTop 140
-    SizeX 0
-    OffsetRight -8
-    OffsetBottom -220
-   }
-   {
-    GridLayoutWidgetClass "{00F6B11784CDB106}" {
-     Name "ItemList"
-    }
    }
   }
   OverlayWidgetClass "{11111111AAAA0001}" {

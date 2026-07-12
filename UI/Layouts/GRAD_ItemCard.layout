@@ -1,15 +1,21 @@
-OverlayWidgetClass {
- Name "ItemCard"
+ButtonWidgetClass {
+ Name "CardButton"
+ style blank
+ components {
+  SCR_InputButtonComponent "{A0000000000000B2}" {
+   m_sActionName "MenuSelect"
+  }
+ }
  {
   SizeLayoutWidgetClass "{A0000000000000A1}" {
    Name "TileSize"
-   Slot OverlayWidgetSlot "{A0000000000000A2}" {
+   Slot ButtonWidgetSlot "{A0000000000000A2}" {
     HorizontalAlign 3
     VerticalAlign 3
    }
    AllowWidthOverride 1
-   AllowHeightOverride 1
    WidthOverride 150
+   AllowHeightOverride 1
    HeightOverride 116
    MinDesiredWidth 150
    MinDesiredHeight 116
@@ -38,6 +44,7 @@ OverlayWidgetClass {
          Name "CardIcon"
          Slot LayoutSlot "{A0000000000000A5}" {
           Padding 6 6 6 2
+          HorizontalAlign 3
          }
          Color 1 1 1 1
         }
@@ -60,19 +67,6 @@ OverlayWidgetClass {
        }
       }
      }
-    }
-   }
-  }
-  ButtonWidgetClass "{A0000000000000B0}" {
-   Name "CardButton"
-   Slot OverlayWidgetSlot "{A0000000000000B1}" {
-    HorizontalAlign 3
-    VerticalAlign 3
-   }
-   style blank
-   components {
-    SCR_InputButtonComponent "{A0000000000000B2}" {
-     m_sActionName "MenuSelect"
     }
    }
   }

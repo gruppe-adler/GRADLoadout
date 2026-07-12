@@ -23,8 +23,8 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 {
 	// Widget names expected in the layout (UI/Layouts/GRAD_ArsenalMenu.layout).
 	protected const string WIDGET_PREVIEW			= "PreviewCharacter";
-	protected const string WIDGET_CATEGORY_LIST		= "CategoryList";	// the 5-tab bar
-	protected const string WIDGET_ITEM_LIST			= "ItemList";		// the card grid container
+	protected const string WIDGET_CATEGORY_TABVIEW	= "CategoryTabView";	// SCR_TabViewComponent host
+	protected const string WIDGET_ITEM_GRID			= "ItemGrid";		// the grid container inside each tab pane (UI/Layouts/GRAD_CategoryPane.layout)
 	protected const string WIDGET_BTN_OK			= "ButtonOK";
 	protected const string WIDGET_BTN_CANCEL		= "ButtonCancel";
 	protected const string WIDGET_TITLE				= "Title";
@@ -84,11 +84,17 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	// The category currently in focus (drives the item browser).
 	protected int m_iSelectedCategory = -1;
 
-	// Item browser (query/grouping over the catalog index) + the container widgets it fills.
-	// m_wCategoryList is the horizontal tab bar; m_wItemList is the vertical card grid container.
-	// Both stored as base Widget so the layout can use whichever layout-widget subclass it wants.
+	// Item browser (query/grouping over the catalog index) + the container widget it fills.
 	protected ref GRAD_ItemBrowser m_Browser;
-	protected Widget m_wCategoryList;
+
+	// The category tab strip. Built from vanilla WLib_TabViewCoreMenus.layout + SCR_TabViewComponent
+	// (5 tabs declared as data in the layout, m_bCreateAllTabsAtStart/m_bKeepHiddenTabs so every tab's
+	// content pane widget exists immediately — no hand-built bar, no script-painted highlight, no
+	// manual Q/E input polling: the component owns paging + the active-tab look).
+	protected SCR_TabViewComponent m_TabView;
+
+	// The item grid inside the CURRENTLY SHOWN tab's content pane (GRAD_CategoryPane.layout's
+	// "ItemGrid"). Re-resolved on every tab switch since each tab has its own grid instance.
 	protected Widget m_wItemList;
 
 	// Tab button layout (vanilla text button + our SCR_InputButtonComponent).
@@ -98,12 +104,23 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	// placeholder here is replaced when the layout is registered.
 	protected const ResourceName CARD_LAYOUT = "{A704EDAAAADC6ADB}UI/Layouts/GRAD_ItemCard.layout";
 
+	// Loadout-panel contents line: [-] [+] label row. GUID must match GRAD_LoadoutLine.layout.meta.
+	protected const ResourceName LINE_LAYOUT = "{C1D2E3F401020304}UI/Layouts/GRAD_LoadoutLine.layout";
+	protected const string WIDGET_LINE_MINUS = "LineMinus";
+	protected const string WIDGET_LINE_PLUS  = "LinePlus";
+	protected const string WIDGET_LINE_LABEL = "LineLabel";
+	protected const string WIDGET_LINE_COUNT = "LineCount";
+
 	// Live row handlers, kept alive for the menu's lifetime so their invokers stay valid.
 	// m_aRowHandlers: category-rail handlers (built once). m_aItemRowHandlers: item-list handlers,
 	// rebuilt on every PopulateItems — MUST be cleared each rebuild, else stale handlers keep
 	// invokers bound to destroyed widgets and the menu crashes when one fires.
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aRowHandlers = {};
 	protected ref array<ref GRAD_ArsenalRowHandler> m_aItemRowHandlers = {};
+
+	// Loadout-panel line handlers ([-]/[+] per contained item). Rebuilt on every RefreshLoadoutPanel
+	// (cleared there), so no stale invoker fires on a freed line widget.
+	protected ref array<ref GRAD_LoadoutLineHandler> m_aLoadoutLineHandlers = {};
 
 	// Expansion state of base-name sub-groups in the item grid, keyed by group label. Default
 	// collapsed; persists across re-populates so toggling one group doesn't reset the others.
@@ -196,6 +213,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (addEquip)
 			addEquip.m_OnActivated.Insert(OnEquipSelected);
 
+		// Give the ADD buttons their captions (they inherit WLib_ButtonText, which defaults to "Button").
+		SetButtonText(root, WIDGET_BTN_ADD_VEST, "ADD TO VEST");
+		SetButtonText(root, WIDGET_BTN_ADD_BACKPACK, "ADD TO BACKPACK");
+		SetButtonText(root, WIDGET_BTN_ADD_EQUIP, "EQUIP");
+
 		// Start with nothing selected → ADD buttons disabled.
 		SetAddButtonsEnabled(false, false, false);
 	}
@@ -254,6 +276,14 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 				// Refresh render with the mirrored kit; same persistent attribs (not null).
 				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
 
+				// Establish an initial frame. The attributes object carries NO distance/offset field
+				// (API-verified) — RotateItemCamera + ZoomCamera(FOV) are the only levers. Without this
+				// the camera defaults to the model origin (inside the chest), so the preview showed a
+				// close-up of fabric. Push a facing rotation + a wider FOV to pull the camera out to a
+				// full-body shot, then re-render from the same attribs instance.
+				FrameFullBody();
+				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
+
 				PinPreviewAlive();
 			}
 		}
@@ -302,6 +332,52 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Frame the whole character. RotateItemCamera adds a delta rotation (clamped by the min/max
+	//! vectors); ZoomCamera adds FOV. Both mutate the persistent m_PreviewAttribs the manager renders
+	//! from. Numbers are tuning starting points — the API exposes no distance/pivot, only these levers.
+	protected void FrameFullBody()
+	{
+		if (!m_PreviewAttribs)
+			return;
+
+		m_PreviewAttribs.ResetDeltaRotation();
+		// Yaw so the character faces the viewer (0 showed the back; 360-ish/0 = front — the delta is
+		// additive, so 0 keeps the default facing which is front-on for the preview character).
+		m_PreviewAttribs.RotateItemCamera("0 0 0", "-90 -180 0", "90 180 0");
+		// Widen FOV hard to pull the camera fully out to a head-to-toe framing.
+		m_PreviewAttribs.ZoomCamera(90.0, 25.0, 120.0);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Approximate a body-region focus for the given tab. There is NO camera focus/look-at/pivot API
+	//! (API-verified) — the only levers are pitch (RotateItemCamera) + FOV (ZoomCamera). Framing is
+	//! therefore approximate: the character origin is fixed, so narrowing FOV zooms toward center and a
+	//! pitch tilt shifts which region crosses frame-center. Tune live.
+	protected void FrameForCategory(int tabIndex)
+	{
+		if (!m_PreviewAttribs)
+			return;
+
+		m_PreviewAttribs.ResetDeltaRotation();
+
+		// tabIndex: 0 Primary, 1 Secondary, 2 Throwables, 3 Apparel, 4 Container.
+		// Apparel gets a slight downward tilt + tighter FOV (head/torso); the rest stay full-body.
+		if (tabIndex == 3)
+		{
+			m_PreviewAttribs.RotateItemCamera("-10 0 0", "-90 -180 0", "90 180 0");
+			m_PreviewAttribs.ZoomCamera(70.0, 25.0, 120.0);
+		}
+		else
+		{
+			m_PreviewAttribs.RotateItemCamera("0 0 0", "-90 -180 0", "90 180 0");
+			m_PreviewAttribs.ZoomCamera(90.0, 25.0, 120.0);
+		}
+
+		if (m_PreviewManager && m_wPreview && m_PreviewCharacter)
+			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! Deactivate the preview clone's entity events so the character lifetime system stops ticking it
 	//! toward cleanup, while the preview manager keeps rendering it. Safe to call repeatedly.
 	protected void PinPreviewAlive()
@@ -334,12 +410,19 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Build the item browser from the catalog index and populate the left category rail. Each
-	//! category is a button that, when clicked, fills the item list with that category's items.
+	//! Build the item browser from the catalog index and wire up the category TabView. Each tab's
+	//! content pane (GRAD_CategoryPane.layout) holds its own item grid; switching tabs re-resolves
+	//! m_wItemList to the shown pane's grid and repopulates it.
 	protected void SetupCategoryRail(notnull Widget root)
 	{
-		m_wCategoryList = root.FindAnyWidget(WIDGET_CATEGORY_LIST);
-		m_wItemList = root.FindAnyWidget(WIDGET_ITEM_LIST);
+		Widget tabViewWidget = root.FindAnyWidget(WIDGET_CATEGORY_TABVIEW);
+		if (tabViewWidget)
+			m_TabView = SCR_TabViewComponent.Cast(tabViewWidget.FindHandler(SCR_TabViewComponent));
+
+		if (m_TabView)
+			m_TabView.GetOnChanged().Insert(OnTabChanged);
+		else
+			GRAD_Log.Warn("ArsenalMenu: CategoryTabView / SCR_TabViewComponent not found");
 
 		// Source the records from the singleton service's (amortized) catalog index. The service is
 		// normally placed in the world, but ensure one exists so the browser works from any entry
@@ -398,44 +481,47 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_Log.Info(string.Format("ArsenalMenu: browser has %1 records, %2 categories",
 			index.GetRecordCount(), m_Browser.GetCategoryCount()));
 
-		PopulateCategories();
+		// Explicitly show tab 0 (Primary) so the component's own active-tab highlight is correct at
+		// open; SelectCategoryByIndex(0) then resolves the grid + populates it (ShowTab's own
+		// GetOnChanged firing on an already-shown index 0 is harmless — SelectCategoryByIndex is
+		// idempotent for repeated calls with the same index).
+		if (m_TabView)
+			m_TabView.ShowTab(0);
 		SelectCategoryByIndex(0);	// default to the Primary tab
 		RefreshLoadoutPanel();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Create the five top tabs (Primary / Secondary / Throwables / Apparel / Container).
-	protected void PopulateCategories()
+	//! SCR_TabViewComponent.GetOnChanged() callback: the user switched tabs (click or the component's
+	//! own built-in paging). Re-resolve the item grid to the newly-shown pane and repopulate it.
+	protected void OnTabChanged(int tabIndex, int previousTabIndex)
 	{
-		if (!m_wCategoryList)
-			return;
-
-		ClearChildren(m_wCategoryList);
-
-		for (int i = 0, count = GRAD_ArsenalTabs.Count(); i < count; i++)
-		{
-			Widget row = CreateRow(m_wCategoryList, GRAD_ArsenalTabs.LabelFor(i));
-			if (!row)
-				continue;
-
-			GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, row);
-			handler.m_iCategoryIndex = i;
-			handler.m_bIsCategory = true;
-			m_aRowHandlers.Insert(handler);
-		}
+		SelectCategoryByIndex(tabIndex);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Select a tab by index (0..4) and refill the item grid with that tab's item types.
+	//! Select a tab by index (0..4): filter the browser to that tab's item types, resolve that tab's
+	//! content-pane item grid (each SCR_TabViewContent pane is its own GRAD_CategoryPane.layout
+	//! instance, kept alive via m_bKeepHiddenTabs so FindAnyWidget always resolves), reframe the
+	//! preview, and repopulate.
 	void SelectCategoryByIndex(int tabIndex)
 	{
 		m_iSelectedCategory = tabIndex;
 		if (m_Browser)
 			m_Browser.SetCategoryMask(GRAD_ArsenalTabs.MaskFor(tabIndex));
 
-		GRAD_Log.Info(string.Format("SelectTab %1 mask=%2 catListFound=%3",
-			tabIndex, GRAD_ArsenalTabs.MaskFor(tabIndex), m_wCategoryList != null));
+		m_wItemList = null;
+		if (m_TabView)
+		{
+			SCR_TabViewContent content = m_TabView.GetEntryContent(tabIndex);
+			if (content && content.m_wTab)
+				m_wItemList = content.m_wTab.FindAnyWidget(WIDGET_ITEM_GRID);
+		}
 
+		GRAD_Log.Info(string.Format("SelectTab %1 mask=%2 itemGridFound=%3",
+			tabIndex, GRAD_ArsenalTabs.MaskFor(tabIndex), m_wItemList != null));
+
+		FrameForCategory(tabIndex);
 		PopulateItems();
 	}
 
@@ -485,6 +571,23 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 					CreateItemCard(rec, variant);
 				}
 			}
+		}
+
+		// Give every column/row an equal fill weight so the grid actually flows the fixed-size tiles
+		// instead of collapsing them to zero width/height (the root cause of the old overlapping-list
+		// bug: GridLayoutWidget only exposes Set{Row,Column}FillWeight — with no weights set, cells
+		// have no claim on the available space). Then force a layout pass.
+		GridLayoutWidget grid = GridLayoutWidget.Cast(m_wItemList);
+		if (grid)
+		{
+			for (int c = 0; c < GRID_COLUMNS; c++)
+				grid.SetColumnFillWeight(c, 1.0);
+
+			int rows = (m_iGridCell + GRID_COLUMNS - 1) / GRID_COLUMNS;
+			for (int r = 0; r < rows; r++)
+				grid.SetRowFillWeight(r, 1.0);
+
+			grid.Update();
 		}
 	}
 
@@ -601,7 +704,6 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_ArsenalRowHandler handler = new GRAD_ArsenalRowHandler(this, card);
 		handler.m_Record = rec;
 		handler.m_bIsCategory = false;
-		handler.m_bBoundOk = SCR_InputButtonComponent.FindComponent(card) != null;	// diag
 		m_aItemRowHandlers.Insert(handler);
 	}
 
@@ -647,11 +749,6 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! for the containers that currently exist on the preview and have room.
 	void OnItemRowClicked(GRAD_ArsenalItemRecord record)
 	{
-		string nm = "<null>";
-		if (record)
-			nm = record.m_sDisplayName;
-		GRAD_Log.Info("OnItemRowClicked: " + nm);	// diag
-
 		m_SelectedRecord = record;
 		RefreshSelectedPanel();
 	}
@@ -931,6 +1028,10 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! render as "[Empty]".
 	protected void RefreshLoadoutPanel()
 	{
+		// Drop the previous frame's line handlers before rebuilding the contents lists, so a click on a
+		// now-destroyed line can't fire a stale invoker (that crashes the menu).
+		m_aLoadoutLineHandlers.Clear();
+
 		RefreshLoadoutSlot(2048, WIDGET_SLOT_UNIFORM_BAR, WIDGET_SLOT_UNIFORM_PCT, WIDGET_SLOT_UNIFORM_CONTENTS);	// TORSO (uniform)
 		RefreshLoadoutSlot(4096, WIDGET_SLOT_VEST_BAR, WIDGET_SLOT_VEST_PCT, WIDGET_SLOT_VEST_CONTENTS);			// VEST
 		RefreshLoadoutSlot(128,  WIDGET_SLOT_BACKPACK_BAR, WIDGET_SLOT_BACKPACK_PCT, WIDGET_SLOT_BACKPACK_CONTENTS);	// BACKPACK
@@ -983,7 +1084,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 
 		if (!storage)
 		{
-			CreateContentsLine(contents, "[Empty]");
+			CreateEmptyLine(contents, "[Empty]");
 			return;
 		}
 
@@ -995,17 +1096,17 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			if (!item)
 				continue;
 
-			CreateContentsLine(contents, GRAD_InventoryLib.GetEntityShortName(item));
+			CreateItemLine(contents, item, storage);
 			shown++;
 		}
 
 		if (shown == 0)
-			CreateContentsLine(contents, "[Empty]");
+			CreateEmptyLine(contents, "[Empty]");
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! One text line in a loadout-panel contents list (built in script; no layout needed).
-	protected void CreateContentsLine(notnull Widget parent, string text)
+	//! A plain (non-interactive) contents line, e.g. the "[Empty]" placeholder. No +/- buttons.
+	protected void CreateEmptyLine(notnull Widget parent, string text)
 	{
 		WorkspaceWidget ws = GetGame().GetWorkspace();
 		if (!ws)
@@ -1019,6 +1120,91 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			tw.SetExactFontSize(14);
 			tw.SetColor(new Color(0.8, 0.85, 0.9, 1));
 		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One interactive contents line: [-] [+] <item name>. The buttons decrement / increment the
+	//! quantity of this item's prefab within the given container (preview only). A per-line handler is
+	//! kept alive in m_aLoadoutLineHandlers so its invokers stay valid until the next panel rebuild.
+	protected void CreateItemLine(notnull Widget parent, notnull IEntity item, notnull BaseInventoryStorageComponent storage)
+	{
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		if (!ws)
+			return;
+
+		Widget line = ws.CreateWidgets(LINE_LAYOUT, parent);
+		if (!line)
+		{
+			// Layout missing/unregistered: fall back to a plain label so contents still list.
+			CreateEmptyLine(parent, GRAD_InventoryLib.GetEntityShortName(item));
+			return;
+		}
+
+		TextWidget label = TextWidget.Cast(line.FindAnyWidget(WIDGET_LINE_LABEL));
+		if (label)
+		{
+			label.SetText(GRAD_InventoryLib.GetEntityShortName(item));
+			label.SetExactFontSize(14);
+			label.SetColor(new Color(0.8, 0.85, 0.9, 1));
+		}
+
+		ResourceName prefab = GRAD_InventoryLib.GetPrefabResourceName(item);
+
+		// Show the current count of this prefab on the preview between the -/+ buttons so the user sees
+		// the quantity change when they click.
+		TextWidget countW = TextWidget.Cast(line.FindAnyWidget(WIDGET_LINE_COUNT));
+		if (countW)
+		{
+			countW.SetText(CountOnPreview(prefab).ToString());
+			countW.SetExactFontSize(14);
+			countW.SetColor(new Color(1, 0.85, 0.4, 1));	// amber, stands out
+		}
+
+		GRAD_LoadoutLineHandler h = new GRAD_LoadoutLineHandler(this, prefab, storage);
+		m_aLoadoutLineHandlers.Insert(h);	// keep alive across this refresh cycle
+
+		Widget minus = line.FindAnyWidget(WIDGET_LINE_MINUS);
+		if (minus)
+		{
+			SCR_InputButtonComponent btn = SCR_InputButtonComponent.FindComponent(minus);
+			if (btn)
+				btn.m_OnActivated.Insert(h.OnMinus);
+		}
+
+		Widget plus = line.FindAnyWidget(WIDGET_LINE_PLUS);
+		if (plus)
+		{
+			SCR_InputButtonComponent btn = SCR_InputButtonComponent.FindComponent(plus);
+			if (btn)
+				btn.m_OnActivated.Insert(h.OnPlus);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! [-] on a loadout line: remove one instance of `prefab` from the preview, then refresh.
+	void OnLoadoutLineMinus(ResourceName prefab)
+	{
+		RemoveOneFromPreview(prefab);
+		PopulateItems();
+		RefreshSelectedPanel();
+		RefreshLoadoutPanel();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! [+] on a loadout line: add one more of `prefab` into the same container `storage`, then refresh.
+	void OnLoadoutLinePlus(ResourceName prefab, BaseInventoryStorageComponent storage)
+	{
+		if (prefab == string.Empty || !m_PreviewCharacter)
+			return;
+
+		GRAD_LoadoutEntry entry = GRAD_LoadoutEntry.Create(prefab, -1, string.Empty, 1);
+		GRAD_LoadoutData single = new GRAD_LoadoutData();
+		single.m_Root.AddChild(entry);
+		ApplyToPreview(single, storage);
+
+		PopulateItems();
+		RefreshSelectedPanel();
+		RefreshLoadoutPanel();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1123,8 +1309,32 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	{
 		super.OnMenuUpdate(tDelta);
 
+		// Q/E tab cycling comes from SCR_TabViewComponent's built-in m_sActionLeft/m_sActionRight
+		// paging (see GRAD_ArsenalMenu.layout's CategoryTabView) — no manual input polling here. A
+		// hand-rolled per-frame GetActionTriggered() poll on an unregistered action name previously
+		// crashed the engine natively; the vanilla component owns this safely.
+
 		// Drive preview orbit/zoom: feed the SAME persistent attribs the manager renders from, so the
 		// helper's mouse-driven RotateItemCamera/ZoomCamera actually show. Re-push on change.
+		//
+		// SAFETY: re-Deactivate() the clone each frame to keep the character-lifetime system from
+		// reaping it (a script-spawned character clone gets deleted after a timeout otherwise, and the
+		// next SetPreviewItem on the freed entity is a native crash — observed ~20s after open). Also
+		// re-fetch its inventory component as a liveness probe; if it's gone, the entity was reaped, so
+		// null our handle and stop touching it rather than dereference freed memory.
+		if (m_PreviewCharacter)
+		{
+			GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
+			if (!ge || !ge.FindComponent(SCR_InventoryStorageManagerComponent))
+			{
+				m_PreviewCharacter = null;	// reaped — drop the dangling handle
+			}
+			else
+			{
+				ge.Deactivate();	// keep it pinned alive this frame
+			}
+		}
+
 		if (m_PreviewCameraHelper && m_PreviewAttribs && m_PreviewManager && m_wPreview && m_PreviewCharacter)
 		{
 			bool changed = m_PreviewCameraHelper.Update(tDelta, m_PreviewAttribs);
@@ -1182,7 +1392,6 @@ class GRAD_ArsenalRowHandler
 	bool m_bIsCategory;					//!< top-tab button
 	bool m_bIsGroupHeader;				//!< collapsible base-name group header card
 	string m_sGroupKey;					//!< group label this header toggles (when m_bIsGroupHeader)
-	bool m_bBoundOk;					//!< diag: was an input button component found to bind
 
 	//------------------------------------------------------------------------------------------------
 	//! Binds the widget's single SCR_InputButtonComponent to OnActivated.
@@ -1210,6 +1419,39 @@ class GRAD_ArsenalRowHandler
 			m_Menu.SelectCategoryByIndex(m_iCategoryIndex);
 		else
 			m_Menu.OnItemRowClicked(m_Record);
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! One loadout-panel contents line's [-]/[+] bridge. Carries the line's prefab and target container
+//! so the parameterless invoker callbacks can route back into the menu with the right context.
+//! Kept alive in the menu's m_aLoadoutLineHandlers (cleared each RefreshLoadoutPanel).
+class GRAD_LoadoutLineHandler
+{
+	protected GRAD_ArsenalMenu m_Menu;
+	protected ResourceName m_sPrefab;
+	protected BaseInventoryStorageComponent m_Storage;
+
+	//------------------------------------------------------------------------------------------------
+	void GRAD_LoadoutLineHandler(GRAD_ArsenalMenu menu, ResourceName prefab, BaseInventoryStorageComponent storage)
+	{
+		m_Menu = menu;
+		m_sPrefab = prefab;
+		m_Storage = storage;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	void OnMinus()
+	{
+		if (m_Menu)
+			m_Menu.OnLoadoutLineMinus(m_sPrefab);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	void OnPlus()
+	{
+		if (m_Menu)
+			m_Menu.OnLoadoutLinePlus(m_sPrefab, m_Storage);
 	}
 }
 
