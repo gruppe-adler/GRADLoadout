@@ -30,74 +30,6 @@ FrameWidgetClass {
     Font "{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt"
    }
   }
-  VerticalLayoutWidgetClass "{2512F4AB6CC30301}" : "{D1CAF877446C66DE}UI/layouts/WidgetLibrary/TabView/WLib_TabViewCoreMenus.layout" {
-   Name "CategoryTabView"
-   Slot FrameWidgetSlot "{441885F0C574F5D2}" {
-    Anchor 0 0 0.34 1
-    PositionX 40
-    OffsetLeft 40
-    PositionY 72
-    OffsetTop 72
-    SizeX -32
-    OffsetRight 20
-    SizeY 8
-    OffsetBottom 40
-   }
-   Clipping True
-   components {
-    SCR_TabViewComponent "{2512F4AB6CC303A8}" {
-     m_aElements {
-      SCR_TabViewContent "{69D8A6246F381E23}" {
-       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
-       m_sTabButtonContent "Primary"
-      }
-      SCR_TabViewContent "{69D8A6246F381E08}" {
-       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
-       m_sTabButtonContent "Secondary"
-      }
-      SCR_TabViewContent "{69D8A6246F381FF1}" {
-       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
-       m_sTabButtonContent "Throwables"
-      }
-      SCR_TabViewContent "{69D8A6246F381FE7}" {
-       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
-       m_sTabButtonContent "Apparel"
-      }
-      SCR_TabViewContent "{69D8A6246F381FEA}" {
-       m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
-       m_sTabButtonContent "Container"
-      }
-     }
-     m_bKeepHiddenTabs 1
-     m_bCreateAllTabsAtStart 1
-     m_bCycleMode 0
-    }
-   }
-   {
-    SizeLayoutWidgetClass "{0000000041B59A6F}" {
-     Prefab "{0000000041B59A6F}"
-     {
-      HorizontalLayoutWidgetClass "{54ACA2928A1FCB02}" {
-       Prefab "{54ACA2928A1FCB02}"
-       {
-        HorizontalLayoutWidgetClass "{00000000287981E0}" {
-         Prefab "{00000000287981E0}"
-         Slot LayoutSlot "{54ACA293E438C895}" {
-          SizeMode Fill
-         }
-        }
-        OverlayWidgetClass "{54ACA29336E9260F}" {
-         Prefab "{54ACA29336E9260F}"
-         Slot LayoutSlot "{54872531B0DFCE1C}" {
-          SizeMode Auto
-         }
-        }
-       }
-      }
-     }
-    }
-   }
-  }
   ItemPreviewWidgetClass "{61E8F727A6D5B5B2}" {
    Name "PreviewCharacter"
    Slot FrameWidgetSlot "{392217F6C77B2E86}" {
@@ -106,76 +38,6 @@ FrameWidgetClass {
     OffsetTop 80
     OffsetRight 0
     OffsetBottom 40
-   }
-  }
-  OverlayWidgetClass "{11111111AAAA0001}" {
-   Name "SelectedPanel"
-   Slot FrameWidgetSlot "{11111111AAAA0002}" {
-    Anchor 0 1 0.34 1
-    PositionX 40
-    OffsetLeft 40
-    PositionY -200
-    OffsetTop -200
-    SizeX -32
-    OffsetRight -8
-    SizeY 230
-    OffsetBottom -30
-   }
-   {
-    ImageWidgetClass "{11111111AAAA0003}" {
-     Name "SelBg"
-     Color 0.08 0.08 0.1 0.9
-    }
-    ImageWidgetClass "{11111111AAAA0005}" {
-     Name "SelIcon"
-     Color 1 1 1 1
-    }
-    TextWidgetClass "{11111111AAAA0007}" {
-     Name "SelName"
-     Text ""
-    }
-    TextWidgetClass "{11111111AAAA0009}" {
-     Name "SelStats"
-     Text ""
-    }
-    VerticalLayoutWidgetClass "{11111111AAAA000B}" {
-     Name "SelButtons"
-     {
-      ButtonWidgetClass "{11111111AAAA000D}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
-       Name "ButtonAddVest"
-       Slot LayoutSlot "{11111111AAAA000E}" {
-        Padding 2 2 2 2
-       }
-       components {
-        SCR_InputButtonComponent "{11111111AAAA000F}" {
-         m_sActionName "MenuSelect"
-        }
-       }
-      }
-      ButtonWidgetClass "{11111111AAAA0010}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
-       Name "ButtonAddBackpack"
-       Slot LayoutSlot "{11111111AAAA0011}" {
-        Padding 2 2 2 2
-       }
-       components {
-        SCR_InputButtonComponent "{11111111AAAA0012}" {
-         m_sActionName "MenuSelect"
-        }
-       }
-      }
-      ButtonWidgetClass "{11111111AAAA0013}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
-       Name "ButtonAddEquip"
-       Slot LayoutSlot "{11111111AAAA0014}" {
-        Padding 2 2 2 2
-       }
-       components {
-        SCR_InputButtonComponent "{11111111AAAA0015}" {
-         m_sActionName "MenuSelect"
-        }
-       }
-      }
-     }
-    }
    }
   }
   VerticalLayoutWidgetClass "{22222222BBBB0001}" {
@@ -309,6 +171,162 @@ FrameWidgetClass {
     ButtonWidgetClass "{6334089205A3950B}" : "{51898FF369FE5EB8}UI/layouts/WidgetLibrary/Buttons/DialogButtonConfirm.layout" {
      Name "ButtonOK"
      Slot LayoutSlot "{6334089205A3950C}" {
+     }
+    }
+   }
+  }
+  VerticalLayoutWidgetClass "{69D8AB9BBEE88ABA}" {
+   Name "VerticalLayout0"
+   Slot FrameWidgetSlot "{69D8AB9BBEE88AED}" {
+    Anchor 0 0 0.34 1
+    PositionX 40
+    OffsetLeft 40
+    PositionY 72
+    OffsetTop 72
+    SizeX -60
+    OffsetRight 20
+    SizeY -906
+    OffsetBottom 40
+   }
+   {
+    VerticalLayoutWidgetClass "{2512F4AB6CC30301}" : "{D1CAF877446C66DE}UI/layouts/WidgetLibrary/TabView/WLib_TabViewCoreMenus.layout" {
+     Name "CategoryTabView"
+     Slot LayoutSlot "{589F093AB3EA94D8}" {
+      SizeMode Auto
+     }
+     Clipping True
+     components {
+      SCR_TabViewComponent "{2512F4AB6CC303A8}" {
+       m_aElements {
+        SCR_TabViewContent "{69D8A6246F381E23}" {
+         m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+         m_sTabButtonContent "Primary"
+        }
+        SCR_TabViewContent "{69D8A6246F381E08}" {
+         m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+         m_sTabButtonContent "Secondary"
+        }
+        SCR_TabViewContent "{69D8A6246F381FF1}" {
+         m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+         m_sTabButtonContent "Throwables"
+        }
+        SCR_TabViewContent "{69D8A6246F381FE7}" {
+         m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+         m_sTabButtonContent "Apparel"
+        }
+        SCR_TabViewContent "{69D8A6246F381FEA}" {
+         m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
+         m_sTabButtonContent "Container"
+        }
+       }
+       m_bKeepHiddenTabs 1
+       m_bCreateAllTabsAtStart 1
+       m_bCycleMode 0
+      }
+     }
+     {
+      SizeLayoutWidgetClass "{0000000041B59A6F}" {
+       Prefab "{0000000041B59A6F}"
+       Slot LayoutSlot "{54872533ECCEDDB0}" {
+       }
+       {
+        HorizontalLayoutWidgetClass "{54ACA2928A1FCB02}" {
+         Prefab "{54ACA2928A1FCB02}"
+         {
+          ButtonWidgetClass "{5644CE82C669B056}" {
+           Prefab "{5644CE82C669B056}"
+           Slot LayoutSlot "{5644CE82C07614AE}" {
+            Padding 50 0 0 0
+           }
+          }
+          HorizontalLayoutWidgetClass "{00000000287981E0}" {
+           Prefab "{00000000287981E0}"
+           Slot LayoutSlot "{54ACA293E438C895}" {
+            SizeMode Fill
+           }
+          }
+          OverlayWidgetClass "{54ACA29336E9260F}" {
+           Prefab "{54ACA29336E9260F}"
+           Slot LayoutSlot "{54872531B0DFCE1C}" {
+            Padding 0 0 30 0
+            SizeMode Auto
+           }
+           {
+            ButtonWidgetClass "{5644CE827F74980C}" {
+             Prefab "{5644CE827F74980C}"
+             Slot OverlayWidgetSlot "{5644CE8278FF0B83}" {
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+    OverlayWidgetClass "{11111111AAAA0001}" {
+     Name "SelectedPanel"
+     Slot LayoutSlot {
+      VerticalAlign 3
+      Padding 0 0 0 0
+      SizeMode Fill
+     }
+     {
+      ImageWidgetClass "{11111111AAAA0003}" {
+       Name "SelBg"
+       Color 0.08 0.08 0.1 0.9
+      }
+      ImageWidgetClass "{11111111AAAA0005}" {
+       Name "SelIcon"
+       Color 1 1 1 1
+      }
+      TextWidgetClass "{11111111AAAA0007}" {
+       Name "SelName"
+       Text ""
+      }
+      TextWidgetClass "{11111111AAAA0009}" {
+       Name "SelStats"
+       Text ""
+      }
+      VerticalLayoutWidgetClass "{11111111AAAA000B}" {
+       Name "SelButtons"
+       {
+        ButtonWidgetClass "{11111111AAAA000D}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+         Name "ButtonAddVest"
+         Slot LayoutSlot "{11111111AAAA000E}" {
+          Padding 2 2 2 2
+         }
+         components {
+          SCR_InputButtonComponent "{11111111AAAA000F}" {
+           m_sActionName "MenuSelect"
+          }
+         }
+        }
+        ButtonWidgetClass "{11111111AAAA0010}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+         Name "ButtonAddBackpack"
+         Slot LayoutSlot "{11111111AAAA0011}" {
+          Padding 2 2 2 2
+         }
+         components {
+          SCR_InputButtonComponent "{11111111AAAA0012}" {
+           m_sActionName "MenuSelect"
+          }
+         }
+        }
+        ButtonWidgetClass "{11111111AAAA0013}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+         Name "ButtonAddEquip"
+         Slot LayoutSlot "{11111111AAAA0014}" {
+          Padding 2 2 2 2
+         }
+         components {
+          SCR_InputButtonComponent "{11111111AAAA0015}" {
+           m_sActionName "MenuSelect"
+          }
+         }
+        }
+       }
+      }
      }
     }
    }
