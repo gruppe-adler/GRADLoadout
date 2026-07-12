@@ -19,13 +19,16 @@ FrameWidgetClass {
     OffsetLeft 40
     OffsetTop 0
     SizeX -80
-    OffsetRight -100
+    OffsetRight 40
     SizeY 50
     OffsetBottom -50
    }
-   Text "ARSENAL MANAGER"
+   Text "GRADle"
    "Horizontal Alignment" Center
    "Vertical Alignment" Center
+   FontProperties FontProperties "{69D8AB9B7D85EB7D}" {
+    Font "{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt"
+   }
   }
   VerticalLayoutWidgetClass "{2512F4AB6CC30301}" : "{D1CAF877446C66DE}UI/layouts/WidgetLibrary/TabView/WLib_TabViewCoreMenus.layout" {
    Name "CategoryTabView"
@@ -36,9 +39,9 @@ FrameWidgetClass {
     PositionY 72
     OffsetTop 72
     SizeX -32
-    OffsetRight -8
+    OffsetRight 20
     SizeY 8
-    OffsetBottom -80
+    OffsetBottom 40
    }
    Clipping True
    components {
@@ -102,18 +105,21 @@ FrameWidgetClass {
     OffsetLeft 0
     OffsetTop 80
     OffsetRight 0
-    OffsetBottom -80
+    OffsetBottom 40
    }
   }
   OverlayWidgetClass "{11111111AAAA0001}" {
    Name "SelectedPanel"
    Slot FrameWidgetSlot "{11111111AAAA0002}" {
     Anchor 0 1 0.34 1
+    PositionX 40
     OffsetLeft 40
+    PositionY -200
     OffsetTop -200
-    SizeX 0
+    SizeX -32
     OffsetRight -8
-    SizeY 180
+    SizeY 230
+    OffsetBottom -30
    }
    {
     ImageWidgetClass "{11111111AAAA0003}" {
@@ -176,82 +182,109 @@ FrameWidgetClass {
    Name "LoadoutPanel"
    Slot FrameWidgetSlot "{22222222BBBB0002}" {
     Anchor 0.74 0 1 1
+    PositionX 8
     OffsetLeft 8
+    PositionY 80
     OffsetTop 80
-    OffsetRight -40
-    OffsetBottom -80
+    SizeX 32
+    OffsetRight 40
+    SizeY 0
+    OffsetBottom 40
    }
    {
-    TextWidgetClass "{22222222BBBB0010}" {
-     Name "UniformHeader"
-     Slot LayoutSlot "{22222222BBBB0011}" {
-      Padding 0 8 0 2
+    HorizontalLayoutWidgetClass "{69D8AB9ABF248A6B}" {
+     Name "Uniformheader"
+     Slot LayoutSlot "{69D8AB9ABF248A76}" {
      }
-     Text "UNIFORM"
-    }
-    ImageWidgetClass "{22222222BBBB0012}" {
-     Name "UniformBar"
-     Slot LayoutSlot "{22222222BBBB0013}" {
+     {
+      ImageWidgetClass "{22222222BBBB0012}" {
+       Name "UniformBar"
+       Slot LayoutSlot "{22222222BBBB0013}" {
+       }
+       Color 0.35 0.7 1 1
+      }
+      TextWidgetClass "{22222222BBBB0010}" {
+       Name "UniformHeader"
+       Slot LayoutSlot "{22222222BBBB0011}" {
+        Padding 0 8 0 2
+       }
+       Text "UNIFORM"
+      }
+      TextWidgetClass "{22222222BBBB0014}" {
+       Name "UniformPercent"
+       Slot LayoutSlot "{22222222BBBB0015}" {
+       }
+       Text ""
+      }
      }
-     Color 0.35 0.7 1 1
-    }
-    TextWidgetClass "{22222222BBBB0014}" {
-     Name "UniformPercent"
-     Slot LayoutSlot "{22222222BBBB0015}" {
-     }
-     Text ""
     }
     VerticalLayoutWidgetClass "{22222222BBBB0016}" {
      Name "UniformContents"
      Slot LayoutSlot "{22222222BBBB0017}" {
      }
     }
-    TextWidgetClass "{22222222BBBB0020}" {
-     Name "VestHeader"
-     Slot LayoutSlot "{22222222BBBB0021}" {
+    HorizontalLayoutWidgetClass "{69D8AB9AB679F544}" {
+     Name "Backpackheader"
+     Slot LayoutSlot "{69D8AB9AB679F4B4}" {
       Padding 0 12 0 2
      }
-     Text "VEST"
-    }
-    ImageWidgetClass "{22222222BBBB0022}" {
-     Name "VestBar"
-     Slot LayoutSlot "{22222222BBBB0023}" {
+     {
+      ImageWidgetClass "{22222222BBBB0032}" {
+       Name "BackpackBar"
+       Slot LayoutSlot "{22222222BBBB0033}" {
+       }
+       Color 0.35 0.7 1 1
+      }
+      TextWidgetClass "{22222222BBBB0030}" {
+       Name "BackpackHeader"
+       Slot LayoutSlot "{22222222BBBB0031}" {
+        Padding 0 12 0 2
+       }
+       Text "BACKPACK"
+      }
+      TextWidgetClass "{22222222BBBB0034}" {
+       Name "BackpackPercent"
+       Slot LayoutSlot "{22222222BBBB0035}" {
+       }
+       Text ""
+      }
      }
-     Color 0.35 0.7 1 1
     }
-    TextWidgetClass "{22222222BBBB0024}" {
-     Name "VestPercent"
-     Slot LayoutSlot "{22222222BBBB0025}" {
+    VerticalLayoutWidgetClass "{22222222BBBB0036}" {
+     Name "BackpackContents"
+     Slot LayoutSlot {
      }
-     Text ""
+    }
+    HorizontalLayoutWidgetClass "{69D8AB9AD14173C3}" {
+     Name "VestHeader"
+     Slot LayoutSlot "{69D8AB9AD1417331}" {
+      Padding 0 12 0 2
+     }
+     {
+      ImageWidgetClass "{22222222BBBB0022}" {
+       Name "VestBar"
+       Slot LayoutSlot "{22222222BBBB0023}" {
+       }
+       Color 0.35 0.7 1 1
+      }
+      TextWidgetClass "{22222222BBBB0020}" {
+       Name "VestHeader"
+       Slot LayoutSlot "{22222222BBBB0021}" {
+        Padding 0 12 0 2
+       }
+       Text "VEST"
+      }
+      TextWidgetClass "{22222222BBBB0024}" {
+       Name "VestPercent"
+       Slot LayoutSlot "{22222222BBBB0025}" {
+       }
+       Text ""
+      }
+     }
     }
     VerticalLayoutWidgetClass "{22222222BBBB0026}" {
      Name "VestContents"
      Slot LayoutSlot "{22222222BBBB0027}" {
-     }
-    }
-    TextWidgetClass "{22222222BBBB0030}" {
-     Name "BackpackHeader"
-     Slot LayoutSlot "{22222222BBBB0031}" {
-      Padding 0 12 0 2
-     }
-     Text "BACKPACK"
-    }
-    ImageWidgetClass "{22222222BBBB0032}" {
-     Name "BackpackBar"
-     Slot LayoutSlot "{22222222BBBB0033}" {
-     }
-     Color 0.35 0.7 1 1
-    }
-    TextWidgetClass "{22222222BBBB0034}" {
-     Name "BackpackPercent"
-     Slot LayoutSlot "{22222222BBBB0035}" {
-     }
-     Text ""
-    }
-    VerticalLayoutWidgetClass "{22222222BBBB0036}" {
-     Name "BackpackContents"
-     Slot LayoutSlot "{22222222BBBB0037}" {
      }
     }
    }

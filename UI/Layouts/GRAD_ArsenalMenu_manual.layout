@@ -1,0 +1,15 @@
+FrameWidgetClass {
+ Name "GRAD_ArsenalMenuRoot"
+ {
+  HorizontalLayoutWidgetClass "{69D8AB87F198E798}" {
+   Name "HorizontalLayout0"
+   Slot FrameWidgetSlot "{69D8AB87F198E7E5}" {
+    Anchor 0 0 1 1
+    PositionX 1040.72
+    PositionY 716.402
+    SizeX -1820
+    SizeY -1050
+   }
+  }
+ }
+}
