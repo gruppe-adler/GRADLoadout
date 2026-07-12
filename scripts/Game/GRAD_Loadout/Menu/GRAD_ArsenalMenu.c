@@ -419,10 +419,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (tabViewWidget)
 			m_TabView = SCR_TabViewComponent.Cast(tabViewWidget.FindHandler(SCR_TabViewComponent));
 
-		if (m_TabView)
-			m_TabView.GetOnChanged().Insert(OnTabChanged);
+		if (m_TabView) {
+			// m_TabView.GetOnChanged().Insert(OnTabChanged());
+			}
 		else
+			{
 			GRAD_Log.Warn("ArsenalMenu: CategoryTabView / SCR_TabViewComponent not found");
+		}
 
 		// Source the records from the singleton service's (amortized) catalog index. The service is
 		// normally placed in the world, but ensure one exists so the browser works from any entry
@@ -495,7 +498,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! SCR_TabViewComponent.GetOnChanged() callback: the user switched tabs (click or the component's
 	//! own built-in paging). Re-resolve the item grid to the newly-shown pane and repopulate it.
 	protected void OnTabChanged(int tabIndex, int previousTabIndex)
-	{
+	{	
 		SelectCategoryByIndex(tabIndex);
 	}
 
