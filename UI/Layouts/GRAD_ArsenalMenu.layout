@@ -31,31 +31,36 @@ FrameWidgetClass {
    Name "CategoryTabView"
    Slot FrameWidgetSlot "{441885F0C574F5D2}" {
     Anchor 0 0 0.34 1
+    PositionX 40
     OffsetLeft 40
+    PositionY 72
     OffsetTop 72
+    SizeX -32
     OffsetRight -8
+    SizeY 8
     OffsetBottom -80
    }
+   Clipping True
    components {
     SCR_TabViewComponent "{2512F4AB6CC303A8}" {
      m_aElements {
-      SCR_TabViewContent {
+      SCR_TabViewContent "{69D8A6246F381E23}" {
        m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
        m_sTabButtonContent "Primary"
       }
-      SCR_TabViewContent {
+      SCR_TabViewContent "{69D8A6246F381E08}" {
        m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
        m_sTabButtonContent "Secondary"
       }
-      SCR_TabViewContent {
+      SCR_TabViewContent "{69D8A6246F381FF1}" {
        m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
        m_sTabButtonContent "Throwables"
       }
-      SCR_TabViewContent {
+      SCR_TabViewContent "{69D8A6246F381FE7}" {
        m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
        m_sTabButtonContent "Apparel"
       }
-      SCR_TabViewContent {
+      SCR_TabViewContent "{69D8A6246F381FEA}" {
        m_ElementLayout "{D2A3B4C5D6E70201}UI/Layouts/GRAD_CategoryPane.layout"
        m_sTabButtonContent "Container"
       }
@@ -63,6 +68,30 @@ FrameWidgetClass {
      m_bKeepHiddenTabs 1
      m_bCreateAllTabsAtStart 1
      m_bCycleMode 0
+    }
+   }
+   {
+    SizeLayoutWidgetClass "{0000000041B59A6F}" {
+     Prefab "{0000000041B59A6F}"
+     {
+      HorizontalLayoutWidgetClass "{54ACA2928A1FCB02}" {
+       Prefab "{54ACA2928A1FCB02}"
+       {
+        HorizontalLayoutWidgetClass "{00000000287981E0}" {
+         Prefab "{00000000287981E0}"
+         Slot LayoutSlot "{54ACA293E438C895}" {
+          SizeMode Fill
+         }
+        }
+        OverlayWidgetClass "{54ACA29336E9260F}" {
+         Prefab "{54ACA29336E9260F}"
+         Slot LayoutSlot "{54872531B0DFCE1C}" {
+          SizeMode Auto
+         }
+        }
+       }
+      }
+     }
     }
    }
   }
