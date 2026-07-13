@@ -11,7 +11,9 @@ modded enum ChimeraMenuPreset
 //!
 //! UI concept (docs/DECISIONS.md D5): a left category rail drives a single content panel; the
 //! preview character sits center-left. This MVP wires:
-//!   - the preview character (local-only clone of the target) via ItemPreviewManagerEntity (D1),
+//!   - the preview character (local-only clone of the target), rendered into a RenderTargetWidget by
+//!     a real spawned camera entity we position ourselves (see the m_PreviewCharacter field comment
+//!     for why this replaced the earlier ItemPreviewManagerEntity/ItemPreviewWidget approach),
 //!   - the category rail -> item browser for the focused category,
 //!   - OK (serialize preview -> apply RPC on the real target) / Cancel (discard preview).
 //!
@@ -66,26 +68,96 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected ref GRAD_ArsenalMenuContext m_Context;
 
 	// Preview character + its render plumbing.
+	//
+	// REPLACED (see git history / docs for the old approach): the preview pane used to be an
+	// ItemPreviewWidget driven by ItemPreviewManagerEntity.SetPreviewItem(widget, entity,
+	// PreviewRenderAttributes). That API is verified to expose EXACTLY 3 methods on
+	// PreviewRenderAttributes (RotateItemCamera, ResetDeltaRotation, ZoomCamera-as-relative-FOV-
+	// increment) and NO distance/pivot/offset control — the camera sits at a fixed distance from the
+	// model origin with no lever to pull it back for a full-body shot. FOV was already maxed
+	// (ZoomCamera(1000, 25, 120) deterministically clamps to 120) and still cropped tight. There is no
+	// fix available within that API, so the preview pane is now a RenderTargetWidget (a DIFFERENT,
+	// unrelated widget hierarchy — confirmed via API search, not a subclass of ItemPreviewWidget) fed
+	// by a real, positionable camera ENTITY we spawn and place ourselves.
+	// ROOT CAUSE FOUND (via vanilla source, arexplorer.zeroy.com — see reforger-api-gotchas memory): the
+	// "int camera" parameter of RenderTargetWidget.SetWorld(world, camera) is a BASEWORLD CAMERA SLOT
+	// INDEX, not a camera entity handle. Vanilla PIP sights (SCR_2DPIPSightsComponent) use slot 8 for
+	// this exact "render a second view into a UI widget" purpose; slot 0 is the main game camera — which
+	// is what CameraBase.GetCameraIndex() returned for our never-registered spawned camera (0, a
+	// meaningless/unassigned default in this context, not our camera's own handle), producing a
+	// transparent preview. No camera ENTITY is required at all: a slot is configured and moved directly
+	// on BaseWorld (SetCameraType/SetCameraVerticalFOV/SetCameraNearPlane/SetCameraFarPlane/SetCameraEx),
+	// exactly like vanilla's SCR_PIPCamera.ApplyProps()/UpdatePIPCamera() do every frame.
 	protected IEntity m_PreviewCharacter;
-	protected ItemPreviewWidget m_wPreview;
+	protected RenderTargetWidget m_wPreview;
+
+	// Still used for the item-grid CARD thumbnails (CreateItemCardWidget's ItemPreviewWidget icons,
+	// via SetPreviewItemFromPrefab) — that auto-framed path works fine for small item icons; it is only
+	// the CENTER CHARACTER preview that moved to the RenderTargetWidget/camera approach above. Do not
+	// remove this field, and do not route the card thumbnails through the new camera.
 	protected ItemPreviewManagerEntity m_PreviewManager;
-	protected ref SCR_InventoryCharacterWidgetHelper m_PreviewCameraHelper;
 
-	// Persistent preview-camera render attributes. The SAME instance must be handed to every
-	// SetPreviewItem* call AND fed to the helper's Update() each frame, so mouse drag-rotate / zoom
-	// accumulate into the object the preview manager renders from. Declared as the BASE type so it can
-	// pass to Update(inout PreviewRenderAttributes) (inout requires an exact type match), but
-	// INSTANTIATED as the character subclass (a bare PreviewRenderAttributes renders nothing).
-	protected ref PreviewRenderAttributes m_PreviewAttribs;
+	// Current framing distance, in meters, applied to the preview camera SLOT every frame (see
+	// PREVIEW_CAMERA_INDEX below). Set by FrameFullBody/FrameForCategory; re-applied each OnMenuUpdate
+	// via PositionCamera so the slot's transform survives whatever else in the engine touches world
+	// camera slots between frames (vanilla's own PIP camera re-applies every frame for the same reason).
+	protected float m_fCameraDistance = 0.0;
 
-	// The prefab the engine-managed preview entity was resolved from (for re-resolve after edits).
+	// The prefab the preview character was spawned from (kept for parity with the old field; not
+	// currently re-read, but cheap to keep around for future re-resolve needs).
 	protected ResourceName m_sPreviewPrefab;
+
+	// Tunable: camera distance from the character's pivot for a full-body shot, in meters. Live-tested
+	// at 3.0 and confirmed too far away/small (see PositionCamera's comment for the full diagnosis of
+	// why — short version: 65 deg was the real culprit, not this). Tightened to 2.2m now that FOV is
+	// fixed, so a full-body shot fills more of the frame without clipping the head/feet at typical
+	// aspect ratios. FrameForCategory scales this down further for the Apparel tab's closer shot.
+	protected const float PREVIEW_CAMERA_DISTANCE = 2.2;
+	// Tunable: character eye height above the character's feet/pivot origin, in meters. Used for BOTH
+	// the camera's height AND the look-at target's height (see PositionCamera) so the camera looks
+	// roughly straight across at the character's face instead of up/down at a mismatched target — the
+	// previous version used two different fractions of a "height" constant for camera vs. look-at,
+	// which tilted the shot and pushed the character off-center. ~1.65m is a reasonable average-adult
+	// eye height for a ~1.75-1.8m-tall character (Reforger's default human proportions); not exact per
+	// character, but far closer than the old hip-height look-at target.
+	protected const float PREVIEW_CAMERA_EYE_HEIGHT = 1.65;
+	// Tunable: vertical FOV in degrees (CameraBase.SetFOVDegree — verified API via api_search: "Set
+	// full symmetrical vertical FOV in degrees", i.e. this IS the full vertical FOV, not a half-angle
+	// or horizontal/diagonal FOV). 65 degrees full vertical FOV is WIDE for a close character portrait
+	// (think GoPro/wide-angle) — at close range a wide FOV makes the subject look smaller and farther
+	// away than it is, and was the primary confirmed cause of the "tiny distant figure" symptom.
+	// Narrowed to 40 degrees, a normal/portrait-lens full vertical FOV, so the character reads as
+	// close and centered instead of shrunk in a wide field of view.
+	protected const float PREVIEW_CAMERA_FOV = 40.0;
+
+	// BaseWorld camera SLOT rendered into the preview RenderTargetWidget. Slot 0 is the main game
+	// camera; vanilla PIP sights (SCR_2DPIPSightsComponent) use slot 8 for their scope/optics render.
+	// 7 avoids both known-used slots without needing a full enumeration of every vanilla user.
+	protected const int PREVIEW_CAMERA_INDEX = 7;
 
 	// Entities created on the preview character by the last apply (for cleanup).
 	protected ref array<IEntity> m_aPreviewCreated = {};
 
 	// The category currently in focus (drives the item browser).
 	protected int m_iSelectedCategory = -1;
+
+	// DIAGNOSTIC: last GetShownTab() value logged by PollTabChange, so it only logs on change instead
+	// of spamming every frame. Remove alongside the diagnostic log line once tab selection is fixed.
+	protected int m_iLastLoggedShownTab = -999;
+
+	// FAILED ATTEMPT (kept as a warning, not removed blindly): a time-based debounce was tried here
+	// first, theorizing GetShownTab() would show two separate settled values in quick succession
+	// that could be collapsed. Live log disproved this: GetShownTab() went 0 -> 2 in ONE clean poll
+	// read with no intermediate value ever observed (confirmed via the exact log sequence: FrameFor
+	// Category tab=0, then next poll already reads GetShownTab()=2). The double-fire happens INSIDE
+	// vanilla SCR_TabViewComponent/SCR_PagingButtonComponent before our poll ever runs — there is
+	// nothing to debounce against. See SetupCategoryRail's AddActionListener comment for the actual
+	// fix (bypass the vanilla paging buttons for Q/E entirely).
+
+	// True once SetupCategoryRail successfully registered OnTabLeftPressed/OnTabRightPressed on the
+	// InputManager — gates the matching RemoveActionListener calls in OnMenuClose so cleanup can't
+	// double-remove or remove listeners that were never added (e.g. if InputManager was null at setup).
+	protected bool m_bTabActionListenersAdded = false;
 
 	// Item browser (query/grouping over the catalog index) + the container widget it fills.
 	protected ref GRAD_ItemBrowser m_Browser;
@@ -144,8 +216,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected ref map<ResourceName, int> m_mPreviewCounts = new map<ResourceName, int>();
 
 	// Item grid wrap: cards flow left-to-right into GRID_COLUMNS columns, wrapping to the next row.
-	// GridLayoutWidget does not auto-wrap, so we place each card at (cell % cols, cell / cols).
-	protected const int GRID_COLUMNS = 2;
+	// UniformGridLayoutWidget does not auto-wrap, so we place each card at (cell % cols, cell / cols).
+	// Was 2 — with fixed 220px cards and the grid pane now widened (SetupCategoryRail's FillWeight
+	// call), 2 columns left roughly a third of the pane as dead space (confirmed live via screenshot).
+	// 3 fits the wider pane without needing per-resolution measurement.
+	protected const int GRID_COLUMNS = 3;
 	protected int m_iGridCell;
 
 	//------------------------------------------------------------------------------------------------
@@ -241,16 +316,23 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Bind an engine-managed preview entity of the primary target's prefab to the preview widget.
+	//! Spawn a local preview character clone, configure the preview's BaseWorld camera SLOT, and bind
+	//! the render-target preview widget to that slot.
 	//!
-	//! Uses SetPreviewItemFromPrefab + ResolvePreviewEntityForPrefab so the ItemPreviewManager OWNS the
-	//! preview entity's lifetime — that fixes the despawn (a hand-spawned clone got reaped by the
-	//! character lifetime system, and Deactivate()-pinning it broke render/input). Rotation/zoom are
-	//! driven by ONE persistent SCR_CharacterInventoryPreviewAttributes fed into both the manager and
-	//! the widget helper's Update() each frame.
+	//! Character spawn/identity/loadout-mirroring is UNCHANGED (this part already worked correctly) —
+	//! only the render plumbing changed. The auto-framed SetPreviewItemFromPrefab/
+	//! ResolvePreviewEntityForPrefab path was already tried for the character preview in an earlier
+	//! session and rendered blank (a bare character prefab has no inventory/clothing until items are
+	//! applied, so that path likely resolves an effectively-invisible entity); do not revert to it here.
+	//!
+	//! Widget/camera binding: RenderTargetWidget.SetWorld(BaseWorld world, int camera) takes a BASEWORLD
+	//! CAMERA SLOT INDEX, not a camera entity handle (confirmed via vanilla SCR_2DPIPSightsComponent
+	//! source on arexplorer.zeroy.com — it configures/reads slot 8 directly on BaseWorld for its PIP
+	//! sight render, no camera entity involved). No camera entity is spawned any more; the slot
+	//! (PREVIEW_CAMERA_INDEX) is driven straight on `world` below and every frame by PositionCamera.
 	protected void SetupPreview(notnull Widget root)
 	{
-		m_wPreview = ItemPreviewWidget.Cast(root.FindAnyWidget(WIDGET_PREVIEW));
+		m_wPreview = RenderTargetWidget.Cast(root.FindAnyWidget(WIDGET_PREVIEW));
 		if (!m_wPreview)
 		{
 			GRAD_Log.Warn("ArsenalMenu: preview widget not found in layout");
@@ -258,29 +340,48 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		}
 
 		ChimeraWorld world = GetGame().GetWorld();
+
+		// Still needed for the item-grid card thumbnails (CreateItemCardWidget), which keep using the
+		// engine-managed auto-framed preview path — see m_PreviewManager's field comment.
 		if (world)
 			m_PreviewManager = world.GetItemPreviewManager();
 
 		IEntity primary = m_Context.GetPrimaryTarget();
 		m_sPreviewPrefab = GRAD_InventoryLib.GetPrefabResourceName(primary);
 
-		if (m_sPreviewPrefab != ResourceName.Empty && m_PreviewManager)
+		if (m_sPreviewPrefab != ResourceName.Empty)
 		{
-			// One persistent attributes object; the manager renders from it and the helper mutates it
-			// from mouse input. MUST be the CHARACTER subclass — a bare PreviewRenderAttributes has no
-			// character framing, so the camera sits inside the mesh (extreme zoom) and drag does nothing.
-			// Field stays typed as base PreviewRenderAttributes to match Update(inout ...).
-			m_PreviewAttribs = new SCR_CharacterInventoryPreviewAttributes();
+			// Spawn position: GRAD_InventoryLib.SpawnLocal defaults to vector.Zero (world origin) when
+			// no position is given — harmless for the OLD ItemPreviewWidget render path (an isolated
+			// preview space, unaffected by the entity's real world position), but now that the preview
+			// is a real BaseWorld camera slot looking at the ACTUAL world, world origin is often open
+			// ocean/void on Reforger maps (confirmed live: camera showed water/horizon, not the
+			// character).
+			//
+			// BUG FIX (was the root cause of the "underside of a wooden structure" report): a first
+			// attempt spawned the clone 500m straight up. A freshly spawned ChimeraCharacter is NOT
+			// physics-frozen — it free-falls under gravity/ragdoll for the ~10s it takes to reach the
+			// ground, landing wherever it happens to (clipped into terrain/a building), and the camera
+			// (which tracks the clone's LIVE transform every frame) showed whatever mid-fall/post-landing
+			// mess resulted. There is no verified freeze/kinematic-disable API for this in the indexed
+			// script API, so instead avoid falling entirely: spawn at the SAME ground level as the
+			// primary target, offset sideways so it doesn't overlap the real player's own body/camera.
+			vector spawnPos = vector.Zero;
+			if (primary)
+			{
+				vector primaryTransform[4];
+				primary.GetWorldTransform(primaryTransform);
+				vector primaryRight = primaryTransform[0];
+				primaryRight.Normalize();
+				spawnPos = primaryTransform[3] + primaryRight * 5.0;
+			}
 
-			// Spawn a local clone and bind it to the widget — this is the render path that actually shows
-			// the character (the from-prefab/resolve path rendered blank). Despawn is mitigated by
-			// Deactivate() (PinPreviewAlive) which stops the lifetime tick while the manager keeps drawing.
-			m_PreviewCharacter = GRAD_InventoryLib.SpawnLocal(m_sPreviewPrefab);
+			// Spawn a local clone — this is the render path that actually shows the character (the
+			// from-prefab/resolve path rendered blank, see class-level comment above).
+			m_PreviewCharacter = GRAD_InventoryLib.SpawnLocal(m_sPreviewPrefab, spawnPos);
 
 			if (m_PreviewCharacter)
 			{
-				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs);
-
 				// Match the edited unit's face/appearance (a fresh spawn gets a random identity).
 				CopyIdentity(primary, m_PreviewCharacter);
 
@@ -291,28 +392,21 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 				if (current)
 					GRAD_LoadoutApply.Apply(m_PreviewCharacter, current, true, false, m_aPreviewCreated);
 
-				// Refresh render with the mirrored kit; same persistent attribs (not null).
-				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
-
-				// Establish an initial frame. The attributes object carries NO distance/offset field
-				// (API-verified) — RotateItemCamera + ZoomCamera(FOV) are the only levers. Without this
-				// the camera defaults to the model origin (inside the chest), so the preview showed a
-				// close-up of fabric. Push a facing rotation + a wider FOV to pull the camera out to a
-				// full-body shot, then re-render from the same attribs instance.
-				FrameFullBody();
-				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
-
 				PinPreviewAlive();
-			}
-		}
 
-		// Mouse orbit + wheel zoom. The helper is a ScriptedWidgetEventHandler — its mouse overrides
-		// only fire once registered on the widget via AddHandler.
-		WorkspaceWidget workspace = GetGame().GetWorkspace();
-		if (m_wPreview && workspace)
-		{
-			m_PreviewCameraHelper = new SCR_InventoryCharacterWidgetHelper(m_wPreview, workspace);
-			m_wPreview.AddHandler(m_PreviewCameraHelper);
+				if (world && m_wPreview)
+				{
+					world.SetCameraType(PREVIEW_CAMERA_INDEX, CameraType.PERSPECTIVE);
+					world.SetCameraVerticalFOV(PREVIEW_CAMERA_INDEX, PREVIEW_CAMERA_FOV);
+					world.SetCameraNearPlane(PREVIEW_CAMERA_INDEX, 0.05);
+					world.SetCameraFarPlane(PREVIEW_CAMERA_INDEX, 500.0);
+
+					FrameFullBody();
+
+					m_wPreview.SetWorld(world, PREVIEW_CAMERA_INDEX);
+					GRAD_Log.Info(string.Format("ArsenalMenu: preview bound to world camera slot %1", PREVIEW_CAMERA_INDEX));
+				}
+			}
 		}
 	}
 
@@ -338,74 +432,136 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Refresh the preview render after a mutation, keeping the same persistent attribs so the camera
-	//! rotation/zoom don't reset. The engine-managed preview entity owns its own lifetime, so there is
-	//! no Activate/Deactivate pinning to do.
+	//! Refresh the preview render after a mutation. With a real camera + RenderTargetWidget there is no
+	//! per-mutation re-bind needed (the widget keeps rendering the same world/camera live every frame,
+	//! unlike the old ItemPreviewManager which needed an explicit SetPreviewItem push to pick up
+	//! changes) — this now only re-pins the character against the lifetime reaper.
 	protected void RefreshPreviewRender()
 	{
-		if (m_PreviewManager && m_wPreview && m_PreviewCharacter)
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
-
 		PinPreviewAlive();
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Frame the whole character. RotateItemCamera adds a delta rotation (clamped by the min/max
-	//! vectors); ZoomCamera ADDS its first arg to whatever FOV the camera currently has, then clamps
-	//! the result to [minFOV, maxFOV] (API-verified: "Add FOV to the current camera" — it is a
-	//! relative increment, NOT an absolute target FOV). The previous code passed a modest +90/+70
-	//! increment, which only reaches max FOV if the engine's undocumented starting FOV happens to be
-	//! low enough — otherwise it lands short of maxFOV and the fixed-distance close-up camera stays
-	//! cropped in tight (matches the observed "torso-only, no head/feet" symptom: a wide FOV close up
-	//! shows more of the body; a narrower one shows less). There is no distance/pivot API (verified),
-	//! so a huge increment that unconditionally clamps at maxFOV=120 is used instead — this removes
-	//! any dependency on the unknown baseline FOV and deterministically maxes out the field of view.
+	//! Frame the whole character: position the camera slot in front of the character, level with its
+	//! eyes, looking straight back at its face (PREVIEW_CAMERA_DISTANCE/PREVIEW_CAMERA_EYE_HEIGHT,
+	//! tunable constants declared with the fields above). Replaces the old PreviewRenderAttributes
+	//! pitch+FOV hack — the camera slot can just be placed in space like anything else instead of
+	//! fighting a fixed-distance, no-pivot render API.
 	protected void FrameFullBody()
 	{
-		if (!m_PreviewAttribs)
-			return;
-
-		m_PreviewAttribs.ResetDeltaRotation();
-		// Yaw so the character faces the viewer (0 showed the back; 360-ish/0 = front — the delta is
-		// additive, so 0 keeps the default facing which is front-on for the preview character).
-		m_PreviewAttribs.RotateItemCamera("0 0 0", "-90 -180 0", "90 180 0");
-		// Oversized increment guarantees the clamp lands exactly at maxFOV regardless of starting FOV.
-		m_PreviewAttribs.ZoomCamera(1000.0, 25.0, 120.0);
+		m_fCameraDistance = PREVIEW_CAMERA_DISTANCE;
+		PositionCamera(m_fCameraDistance, PREVIEW_CAMERA_EYE_HEIGHT);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Approximate a body-region focus for the given tab. There is NO camera focus/look-at/pivot API
-	//! (API-verified) — the only levers are pitch (RotateItemCamera) + FOV (ZoomCamera, which ADDS to
-	//! the current FOV — see FrameFullBody's note). Framing is therefore approximate: the character
-	//! origin is fixed, so narrowing FOV zooms toward center and a pitch tilt shifts which region
-	//! crosses frame-center. Tune live.
+	//! Approximate a body-region focus for the given tab by moving the camera closer, matching the
+	//! intent of the old pitch/FOV hack but via camera transform. tabIndex: 0 Primary, 1 Secondary,
+	//! 2 Throwables, 3 Apparel, 4 Container. Apparel gets a closer shot; the rest use the same
+	//! full-body eye-level framing as FrameFullBody. Tune the constants live.
 	protected void FrameForCategory(int tabIndex)
 	{
-		if (!m_PreviewAttribs)
-			return;
-
-		m_PreviewAttribs.ResetDeltaRotation();
-
-		// tabIndex: 0 Primary, 1 Secondary, 2 Throwables, 3 Apparel, 4 Container.
-		// Apparel gets a slight downward tilt + tighter FOV (head/torso); the rest stay full-body.
-		// ZoomCamera's first arg is a relative increment (see FrameFullBody). To land deterministically
-		// on a target FOV regardless of the current/starting FOV, drive the increment hard in the
-		// desired direction and let the clamp pin the result at the corresponding bound: a large
-		// negative increment clamps at minFOV (here raised to 70 as the floor -> lands at 70), a large
-		// positive increment clamps at maxFOV (120).
 		if (tabIndex == 3)
 		{
-			m_PreviewAttribs.RotateItemCamera("-10 0 0", "-90 -180 0", "90 180 0");
-			m_PreviewAttribs.ZoomCamera(-1000.0, 70.0, 120.0);
+			// Apparel: closer shot for a clothing-focused view. Still eye-level (not scaled down like
+			// the old height*0.7) — PositionCamera aims the look-at target at the SAME eye height as
+			// the camera regardless of distance, so closing the distance alone tightens the framing
+			// without re-introducing the camera/look-at height mismatch that caused the original bug.
+			m_fCameraDistance = PREVIEW_CAMERA_DISTANCE * 0.6;
 		}
 		else
 		{
-			m_PreviewAttribs.RotateItemCamera("0 0 0", "-90 -180 0", "90 180 0");
-			m_PreviewAttribs.ZoomCamera(1000.0, 25.0, 120.0);
+			m_fCameraDistance = PREVIEW_CAMERA_DISTANCE;
 		}
 
-		if (m_PreviewManager && m_wPreview && m_PreviewCharacter)
-			m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs, true);
+		PositionCamera(m_fCameraDistance, PREVIEW_CAMERA_EYE_HEIGHT);
+
+		GRAD_Log.Info(string.Format("FrameForCategory: tab=%1", tabIndex));
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Place the preview camera SLOT `distance` meters in front of the preview character (along the
+	//! character's forward axis, so it faces the character head-on) and `eyeHeight` meters above the
+	//! character's feet/origin, then aim it back at that SAME height on the character (not a
+	//! different, lower height) so the shot looks straight across at the face instead of down at the
+	//! hips. No-op if the character or world is missing.
+	//!
+	//! BUG FIX (was the root cause of the "tiny distant figure in a field" report): the previous
+	//! version lifted the camera to `height` (1.3m) but aimed the look-at target at only `height * 0.6`
+	//! (0.78m) — camera at roughly chest height staring down at hip height, tilting the shot off the
+	//! character's centerline. Combined with PREVIEW_CAMERA_FOV being a much wider lens than intended
+	//! (see that constant's comment — SetFOVDegree is a FULL vertical FOV, and 65 deg full is a wide/
+	//! GoPro-like lens, not a portrait lens), the character ended up small and low in a wide, tilted
+	//! frame. Both are fixed now: single eye-height constant for camera AND look-at, plus a much
+	//! narrower 40 deg FOV.
+	//!
+	//! Called every frame from OnMenuUpdate (not just on tab-change) because the slot's transform is
+	//! NOT persistent state we own — vanilla's own PIP camera re-applies its transform every frame
+	//! (SCR_PIPCamera.UpdatePIPCamera -> ApplyTransform) for the same reason: nothing guarantees a
+	//! world camera slot's matrix survives untouched between frames.
+	protected void PositionCamera(float distance, float eyeHeight)
+	{
+		if (!m_PreviewCharacter)
+			return;
+
+		BaseWorld world = GetGame().GetWorld();
+		if (!world)
+			return;
+
+		vector charTransform[4];
+		m_PreviewCharacter.GetWorldTransform(charTransform);
+		vector charPos = charTransform[3];
+		vector charForward = charTransform[2];
+
+		// Defensive normalize: charForward is the transform's Z-basis column, which is only guaranteed
+		// unit-length if the entity has no non-uniform/non-1.0 scale baked into its world transform. No
+		// scale is explicitly set anywhere on the preview clone (GRAD_InventoryLib.SpawnLocal spawns
+		// from an identity transform), so this should already be a unit vector in practice — but
+		// normalizing here is cheap insurance against `distance` silently becoming
+		// distance*|charForward| (e.g. a 3m intended offset quietly turning into much more) if that
+		// ever changes.
+		charForward.Normalize();
+
+		// Stand the camera out along the character's forward axis so it looks at the character's front
+		// (not its back), then lift it to eye height.
+		vector camPos = charPos - charForward * distance;
+		camPos[1] = camPos[1] + eyeHeight;
+
+		// Look-at target uses the SAME eyeHeight as the camera (see method comment above for why the
+		// old *0.6 mismatch was a bug) so the shot is level, centered on the face, not angled downward.
+		vector lookTarget = charPos;
+		lookTarget[1] = charPos[1] + eyeHeight;
+
+		// World up axis as a literal (Y-up, matching this engine's convention — e.g. charTransform[1]/
+		// camPos[1] above are the height/Y component). Cross-checked against the wiki's New Terrain Setup
+		// page (light source "Angle Y = yaw" / "Angle X = pitch", i.e. yaw rotates about Y) and the FBX
+		// Import page ("align assets pointing along Z+ axis in Enfusion") — both confirm Y-up, Z-forward,
+		// so vector index 1 genuinely means height here; there is no XZY component-order swap in play.
+		// "vector.Up" is not a confirmed API member, so a literal is used instead of guessing at a
+		// constant that might not exist.
+		vector worldUp = "0 1 0";
+
+		// BUG FIX (root cause of the "straight-down grass shot" regression): this used to hand-build the
+		// matrix via Math3D.DirectionAndUpMatrix(toTarget, worldUp, camTransform), which only documents
+		// itself as "creates rotation matrix from direction and up vector" — it does NOT document which
+		// output column (mat[0]/right, mat[1]/up, mat[2]/forward) the input `dir` actually lands in, nor
+		// whether a camera's look axis is +mat[2] or -mat[2]. Guessing that convention wrong is exactly
+		// what produced the straight-down shot (a 90-degrees-off basis reinterpreted as "forward" tips the
+		// whole camera to point along what was actually the up/right axis).
+		// VERIFIED via api_search: SCR_Math3D (Arma Reforger script API, distinct from the raw Enfusion
+		// Math3D used elsewhere in this file for MatrixIdentity4) exposes
+		//   static void LookAt(vector source, vector destination, vector up, out vector rotMat[4])
+		//   -- "Returns a rotation matrix that makes object positioned at source position face the point
+		//   at destination."
+		// This is a purpose-built look-at helper that sidesteps the column/sign ambiguity entirely: it is
+		// documented in terms of "object at source faces destination," which is precisely this camera's
+		// requirement, instead of a generic direction/up basis whose forward-column convention is
+		// unstated. (Also cross-confirmed the engine's matrix column layout separately via
+		// SCR_Math3D.IsMatrixIdentity's doc string, "(right, up, forward, zero vectors)" — column 2 is
+		// forward, matching charForward = charTransform[2] used above, so that part was already correct.)
+		vector camTransform[4];
+		SCR_Math3D.LookAt(camPos, lookTarget, worldUp, camTransform);
+
+		world.SetCameraEx(PREVIEW_CAMERA_INDEX, camTransform);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -446,31 +602,131 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! — resolved once here and repopulated in place on every tab switch.
 	protected void SetupCategoryRail(notnull Widget root)
 	{
+		// ROOT CAUSE (found via vanilla source, arexplorer.zeroy.com — see reforger-api-gotchas memory):
+		// CategoryTabView IMPORTS vanilla WLib_TabViewCoreMenus.layout (which already carries its own
+		// SCR_TabViewComponent) and our layout's `components { SCR_TabViewComponent "{...}" {...} }`
+		// block declares a DIFFERENT instance GUID — that ADDS a second component instead of overriding
+		// the inherited one. Widget.FindHandler(type) returns only the FIRST handler of that type, which
+		// is the inherited (zombie) instance: it never receives m_aElements (that's only set on OUR
+		// instance's data block), so its ShowTab() validation `i >= m_aElements.Count()` always fails and
+		// GetShownTab() (== m_iSelectedTab) is stuck at -1 forever — exactly the frozen-tracking symptom.
+		// Meanwhile BOTH instances subscribe OnTabLeft/OnTabRight to the SAME shared PagingLeft/PagingRight
+		// buttons (resolved by widget name in Init()), so any instance with real tabs advances itself on
+		// every Q/E press — a second live instance is the double-advance culprit.
+		// Fix: enumerate every handler via Widget.GetNumHandlers()/GetHandler(int) (both verified: "return
+		// number of all handlers attached to widget" / indexed accessor), keep the first instance whose
+		// GetShownTab() is ever >= 0 (only an instance that successfully completed a ShowTab() can be),
+		// and mute action listening on any OTHER live instance so it stops double-firing on Q/E.
 		Widget tabViewWidget = root.FindAnyWidget(WIDGET_CATEGORY_TABVIEW);
+		m_TabView = null;
 		if (tabViewWidget)
-			m_TabView = SCR_TabViewComponent.Cast(tabViewWidget.FindHandler(SCR_TabViewComponent));
+		{
+			int numHandlers = tabViewWidget.GetNumHandlers();
+			for (int hi = 0; hi < numHandlers; hi++)
+			{
+				SCR_TabViewComponent tv = SCR_TabViewComponent.Cast(tabViewWidget.GetHandler(hi));
+				if (!tv)
+					continue;
+
+				int shownTab = tv.GetShownTab();
+				GRAD_Log.Info(string.Format("ArsenalMenu: TabView handler #%1 GetShownTab()=%2", hi, shownTab));
+
+				if (shownTab >= 0)
+				{
+					if (!m_TabView)
+					{
+						m_TabView = tv;
+					}
+					else
+					{
+						tv.SetListenToActions(false);
+						GRAD_Log.Info(string.Format("ArsenalMenu: muted extra live TabView handler #%1 (double-advance culprit)", hi));
+					}
+				}
+			}
+
+			// All handlers read -1: fall back to the old resolution rather than leaving m_TabView null.
+			if (!m_TabView)
+				m_TabView = SCR_TabViewComponent.Cast(tabViewWidget.FindHandler(SCR_TabViewComponent));
+
+			// DIAGNOSTIC: settles whether the duplicate instance also duplicated its 5 tab BUTTONS (10
+			// total, clipped to look like 5) vs. just existing as a dataless zombie (still 5 buttons).
+			// Remove once the tab-selection bug is fully confirmed fixed live.
+			Widget tabsContainer = tabViewWidget.FindAnyWidget("Tabs");
+			if (tabsContainer)
+			{
+				int buttonCount = 0;
+				Widget tabChild = tabsContainer.GetChildren();
+				while (tabChild)
+				{
+					buttonCount++;
+					tabChild = tabChild.GetSibling();
+				}
+				GRAD_Log.Info(string.Format("ArsenalMenu: 'Tabs' container holds %1 tab buttons (5 expected)", buttonCount));
+			}
+		}
 
 		if (!m_TabView)
-		{
 			GRAD_Log.Warn("ArsenalMenu: CategoryTabView / SCR_TabViewComponent not found");
-		}
-		else
+
+		// Q/E DOUBLE-ADVANCE FIX (root-caused via vanilla source, arexplorer.zeroy.com):
+		// SCR_PagingButtonComponent.SetAction() registers BOTH an InputManager.AddActionListener
+		// (EActionTrigger.DOWN -> OnMenuSelect) AND relies on the button's own OnClick, and BOTH call
+		// the identical m_OnActivated.Invoke(...) -> SCR_TabViewComponent.OnTabRight()/OnTabLeft() ->
+		// ShowTab(GetNextValidItem(...)). One E/Q press can fire both, synchronously, before our poll
+		// ever runs — confirmed live: GetShownTab() went 0 -> 2 with no intermediate value ever
+		// observed (a time-based debounce was tried first and removed; there was nothing to debounce,
+		// see PollTabChange's comment). This is vanilla script we don't own and SetListenToActions only
+		// gates the component's OWN listener (one of the two firing paths, not the button's OnClick),
+		// so it cannot fix it either.
+		//
+		// Fix: stop relying on the vanilla paging buttons for Q/E entirely. Silence the component's own
+		// listener (removes one of the two firing paths) and register OUR OWN single DOWN-triggered
+		// listener directly on the same already-proven-valid action names (MenuTabLeft/MenuTabRight —
+		// these are NOT unregistered/guessed names; they already drive m_sActionLeft/m_sActionRight on
+		// this exact component, confirmed working), calling ShowTab(GetNextValidItem(...)) ourselves
+		// exactly once per press. InputManager.AddActionListener(name, EActionTrigger.DOWN, callback)
+		// is the verified, real, edge-triggered API (confirmed identical usage in vanilla
+		// SCR_PagingButtonComponent.SetAction's own source) — NOT a per-frame GetActionTriggered() poll
+		// (the pattern that previously crashed the engine on an UNREGISTERED action name; these two
+		// names are proven registered/valid here, so that risk does not apply).
+		if (m_TabView)
 		{
-			// The component's own AddActionListeners() reacts to m_sActionLeft/m_sActionRight directly,
-			// AND the paging-button widgets baked into WLib_TabViewCoreMenus.layout (m_PagingLeft/
-			// m_PagingRight, SCR_PagingButtonComponent) independently react to the SAME bound action via
-			// their own click handling — both paths call back into OnTabRight()/OnTabLeft(), so one E
-			// press was advancing the tab twice. SetListenToActions(false) disables the component's own
-			// direct listener, leaving only the paging-button widgets' handling (which still works, since
-			// they're what's visibly wired to the E/Q hint chips in the tab strip).
 			m_TabView.SetListenToActions(false);
+
+			InputManager inputMgr = GetGame().GetInputManager();
+			if (inputMgr)
+			{
+				inputMgr.AddActionListener("MenuTabLeft", EActionTrigger.DOWN, OnTabLeftPressed);
+				inputMgr.AddActionListener("MenuTabRight", EActionTrigger.DOWN, OnTabRightPressed);
+				m_bTabActionListenersAdded = true;
+			}
 		}
+
 		// Tab-change reaction is via PollTabChange() in OnMenuUpdate, not GetOnChanged() — see
 		// PollTabChange's comment for why.
 
 		m_wItemList = root.FindAnyWidget(WIDGET_ITEM_GRID);
 		if (!m_wItemList)
 			GRAD_Log.Warn(string.Format("ArsenalMenu: item grid widget '%1' not found in layout", WIDGET_ITEM_GRID));
+
+		// The three top-level panes (PaneLeftCategories/PaneCenterPreview/PaneRightContainer) are all
+		// plain SizeMode Fill in the layout, so they split available width EVENLY (1/3 each). With
+		// GRID_COLUMNS=2 fixed-220px cards, an even 1/3 share left roughly a third of the grid pane as
+		// dead space (confirmed live via screenshot). Give the grid pane more of the width at runtime
+		// via the verified LayoutSlot.SetFillWeight(widget, weight) static (distinct from the
+		// GridLayoutWidget row/column fill-weight trap documented elsewhere in this file — this is a
+		// plain proportional-share API for HorizontalLayoutWidget children) rather than guess at an
+		// unverified static ".layout" property token.
+		Widget paneCategories = root.FindAnyWidget("PaneLeftCategories");
+		Widget panePreview = root.FindAnyWidget(WIDGET_PREVIEW);
+		Widget paneRight = root.FindAnyWidget("PaneRightContainer");
+		if (paneCategories)
+			LayoutSlot.SetFillWeight(paneCategories, 1.6);
+		if (panePreview)
+			LayoutSlot.SetFillWeight(panePreview, 1.0);
+		if (paneRight)
+			LayoutSlot.SetFillWeight(paneRight, 1.0);
 
 		// Source the records from the singleton service's (amortized) catalog index. The service is
 		// normally placed in the world, but ensure one exists so the browser works from any entry
@@ -529,13 +785,23 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_Log.Info(string.Format("ArsenalMenu: browser has %1 records, %2 categories",
 			index.GetRecordCount(), m_Browser.GetCategoryCount()));
 
-		// Explicitly show tab 0 (Primary) so the component's own active-tab highlight is correct at
-		// open; SelectCategoryByIndex(0) then resolves the grid + populates it (ShowTab's own
-		// GetOnChanged firing on an already-shown index 0 is harmless — SelectCategoryByIndex is
-		// idempotent for repeated calls with the same index).
+		// RebuildBrowser() also runs from OnCatalogReady() — the catalog index builds amortized over
+		// frames and can finish AFTER the menu has opened and the user has already switched tabs. This
+		// method replaces m_Browser with a brand-new GRAD_ItemBrowser (fresh m_iCategoryMask = 0, "off"),
+		// so unconditionally forcing tab 0 here silently desynced the grid's filter from the tab strip's
+		// visual highlight: the user would click/page to e.g. Apparel (SCR_TabViewComponent's own
+		// highlight updates correctly, it owns that independent of our code), then a late catalog-ready
+		// callback would reset the BROWSER's mask back to Primary while the highlight stayed on Apparel
+		// — exactly the "Apparel selected but Primary items shown" bug reported live. Re-apply whatever
+		// tab was already selected (m_iSelectedCategory, default -1 only on first-ever build) instead of
+		// always resetting to 0, so a late rebuild can't silently desync from what's visually shown.
+		int tabToShow = m_iSelectedCategory;
+		if (tabToShow < 0 || tabToShow >= GRAD_ArsenalTabs.Count())
+			tabToShow = 0;
+
 		if (m_TabView)
-			m_TabView.ShowTab(0);
-		SelectCategoryByIndex(0);	// default to the Primary tab
+			m_TabView.ShowTab(tabToShow);
+		SelectCategoryByIndex(tabToShow);
 		RefreshLoadoutPanel();
 	}
 
@@ -545,14 +811,66 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//! (ScriptInvokerTabViewIndexMethod) rejects both a 1-arg and a 0-arg handler at compile time, and
 	//! its exact required signature isn't in the indexed API docs. A cheap int-compare poll sidesteps
 	//! the whole guessing game while still reacting the same frame a click or Q/E paging changes tabs.
-	protected void PollTabChange()
+	protected void PollTabChange(float tDelta)
 	{
 		if (!m_TabView)
 			return;
 
 		int shown = m_TabView.GetShownTab();
+
+		// DIAGNOSTIC: log every raw read that differs from the last logged value, regardless of whether
+		// it's valid, so we can see the actual GetShownTab() sequence during a tab switch (does it ever
+		// leave -1? does it reach the clicked index at all?). Remove once the tab-selection bug is fully
+		// root-caused.
+		if (shown != m_iLastLoggedShownTab)
+		{
+			GRAD_Log.Info(string.Format("PollTabChange: raw GetShownTab()=%1 (m_iSelectedCategory=%2)", shown, m_iSelectedCategory));
+			m_iLastLoggedShownTab = shown;
+		}
+
+		// GetShownTab() can transiently report -1 (no tab "settled" yet, e.g. mid-transition on a fast
+		// Q/E press). Reacting to that wiped the category mask via MaskFor(-1) -> 0 -> "mask mode off",
+		// which combined with m_iCategoryType also defaulting to -1 ("all categories") made every tab
+		// show every item — confirmed live via the log line "SelectTab -1 mask=0". Only ever select a
+		// genuinely valid tab index; ignore -1 (or any other out-of-range read) and wait for the next
+		// poll to catch the real settled index instead.
+		if (shown < 0 || shown >= GRAD_ArsenalTabs.Count())
+			return;
+
+		// The Q/E double-advance is now prevented at the SOURCE (see SetupCategoryRail's
+		// AddActionListener comment — our own single DOWN-triggered listener drives ShowTab directly,
+		// bypassing the vanilla paging buttons entirely), so GetShownTab() only ever reflects one step
+		// per press by the time we poll it. No debounce needed here any more (a debounce was tried and
+		// removed — see the m_iLastLoggedShownTab field comment for why it couldn't have worked: there
+		// was never an intermediate value to catch, only the already-doubled final one).
 		if (shown != m_iSelectedCategory)
 			SelectCategoryByIndex(shown);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Our own single, edge-triggered (EActionTrigger.DOWN) handlers for MenuTabLeft/MenuTabRight,
+	//! registered in SetupCategoryRail to bypass the vanilla paging buttons' double-fire (see that
+	//! method's comment). Each press calls ShowTab exactly once via GetNextValidItem — both verified
+	//! real methods already used elsewhere in this file's investigation of SCR_TabViewComponent.
+	protected void OnTabLeftPressed()
+	{
+		if (!m_TabView)
+			return;
+
+		int next = m_TabView.GetNextValidItem(true);
+		if (next >= 0)
+			m_TabView.ShowTab(next);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void OnTabRightPressed()
+	{
+		if (!m_TabView)
+			return;
+
+		int next = m_TabView.GetNextValidItem(false);
+		if (next >= 0)
+			m_TabView.ShowTab(next);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -621,22 +939,24 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			}
 		}
 
-		// Give every column/row an equal fill weight so the grid actually flows the fixed-size tiles
-		// instead of collapsing them to zero width/height (the root cause of the old overlapping-list
-		// bug: GridLayoutWidget only exposes Set{Row,Column}FillWeight — with no weights set, cells
-		// have no claim on the available space). Then force a layout pass.
-		GridLayoutWidget grid = GridLayoutWidget.Cast(m_wItemList);
-		if (grid)
-		{
-			for (int c = 0; c < GRID_COLUMNS; c++)
-				grid.SetColumnFillWeight(c, 1.0);
-
-			int rows = (m_iGridCell + GRID_COLUMNS - 1) / GRID_COLUMNS;
-			for (int r = 0; r < rows; r++)
-				grid.SetRowFillWeight(r, 1.0);
-
-			grid.Update();
-		}
+		// CategoryItems switched from GridLayoutWidget to UniformGridLayoutWidget (diagnostic logging
+		// proved GridLayoutWidget's fill-weight model was the actual bug: SetRowFillWeight divides the
+		// grid's total HEIGHT evenly across every weighted row, with no scrolling/growth — measured live
+		// at 66 rows in a ~1086px-tall grid, each row got ~16px versus the tile's fixed 180px, squashing
+		// every card into a sliver). UniformGridLayoutWidget exposes no fill-weight API at all — cells
+		// size from content, not a forced division — and CategoryItems is now wrapped in a
+		// ScrollLayoutWidget (CategoryItemsScroll) so the grid can grow past the pane's fixed height with
+		// the scroll container handling overflow.
+		//
+		// BUG FIX ("items only appear on scroll"): populating via SetColumn/SetRow does not itself
+		// trigger a relayout — the grid/scroll container kept its stale (often zero-height at first
+		// populate) bounds until some OTHER event forced a relayout, e.g. the user scrolling. Widget.
+		// Update() ("proto external void Update()", confirmed on the base Widget/ScrollLayoutWidget
+		// interface, not something added for this fix) forces that recompute immediately after the grid
+		// is filled, so the cards are visible without needing any user interaction first.
+		m_wItemList.Update();
+		if (m_wItemList.GetParent())
+			m_wItemList.GetParent().Update();	// the ScrollLayoutWidget wrapper's own content-size cache
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -712,7 +1032,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		else
 			marker = "[+] ";
 
-		Widget card = CreateItemCardWidget(marker + group.m_sLabel, string.Format("%1", group.GetCount()), "", null);
+		// No single prefab represents a multi-variant group header, but showing SOMETHING beats a blank
+		// tile — use the first variant's prefab as a representative preview.
+		ResourceName previewPrefab = ResourceName.Empty;
+		if (group.m_aItems.Count() > 0 && group.m_aItems[0])
+			previewPrefab = group.m_aItems[0].m_sPrefab;
+
+		Widget card = CreateItemCardWidget(marker + group.m_sLabel, string.Format("%1", group.GetCount()), "", previewPrefab);
 		if (!card)
 			return;
 
@@ -745,7 +1071,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (count > 0)
 			countText = count.ToString();
 
-		Widget card = CreateItemCardWidget(name, countText, "", rec.m_UiInfo);
+		Widget card = CreateItemCardWidget(name, countText, "", rec.m_sPrefab);
 		if (!card)
 			return;
 
@@ -756,8 +1082,9 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//! Build an icon tile card from GRAD_ItemCard.layout and place it in the next grid cell (wrapping
-	//! into GRID_COLUMNS columns). Fills the icon (from uiInfo), name, and count child widgets.
-	protected Widget CreateItemCardWidget(string name, string count, string weight, SCR_UIInfo uiInfo)
+	//! into GRID_COLUMNS columns). Fills the icon (a live 3D preview of `prefab`, empty for group
+	//! headers), name, and count child widgets.
+	protected Widget CreateItemCardWidget(string name, string count, string weight, ResourceName prefab)
 	{
 		WorkspaceWidget workspace = GetGame().GetWorkspace();
 		if (!workspace)
@@ -767,9 +1094,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (!card)
 			return null;
 
-		// Wrap into a grid: place at (cell % cols, cell / cols), then advance.
-		GridSlot.SetColumn(card, m_iGridCell % GRID_COLUMNS);
-		GridSlot.SetRow(card, m_iGridCell / GRID_COLUMNS);
+		// Wrap into a grid: place at (cell % cols, cell / cols), then advance. CategoryItems is a
+		// UniformGridLayoutWidget (see PopulateItems' comment for why), so its slot type is
+		// UniformGridSlot, not GridSlot.
+		UniformGridSlot.SetColumn(card, m_iGridCell % GRID_COLUMNS);
+		UniformGridSlot.SetRow(card, m_iGridCell / GRID_COLUMNS);
 		m_iGridCell++;
 
 		TextWidget nameW = TextWidget.Cast(card.FindAnyWidget(WIDGET_CARD_NAME));
@@ -783,14 +1112,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (countW)
 			countW.SetText(count);
 
-		ImageWidget iconW = ImageWidget.Cast(card.FindAnyWidget(WIDGET_CARD_ICON));
-		if (iconW)
-		{
-			if (uiInfo && uiInfo.HasIcon())
-				uiInfo.SetIconTo(iconW);
-			else
-				iconW.SetVisible(false);
-		}
+		// Real 3D model thumbnail (not a flat SCR_UIInfo icon) — every catalog item has a resolvable
+		// prefab, so this renders correctly regardless of whether the item happens to have hand-authored
+		// icon art. Same manager instance already driving the center character preview; a single call at
+		// creation is enough (unlike the character preview, cards don't need per-frame updates).
+		ItemPreviewWidget iconW = ItemPreviewWidget.Cast(card.FindAnyWidget(WIDGET_CARD_ICON));
+		if (iconW && prefab != ResourceName.Empty && m_PreviewManager)
+			m_PreviewManager.SetPreviewItemFromPrefab(iconW, prefab, null, false);
 
 		return card;
 	}
@@ -932,12 +1260,23 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! ADD TO BACKPACK button: add the selected item into the backpack storage. No-op if no backpack.
+	//! ADD TO BACKPACK button: add the selected item into the backpack storage. No-op if no backpack
+	//! is worn (the button is dimmed/disabled in that case via SetAddButtonsEnabled — this guard is
+	//! only reached on a stray click, or if the preview's mirrored loadout came back empty, e.g. from
+	//! the character-falling bug fixed in SetupPreview's spawn-position comment).
 	void OnAddToBackpack()
 	{
 		BaseInventoryStorageComponent bag = FindNamedContainer(128);	// BACKPACK
 		if (bag)
+		{
 			AddSelectedToContainer(bag);
+		}
+		else
+		{
+			GRAD_Log.Warn("ArsenalMenu: ADD TO BACKPACK clicked but preview has no backpack container " +
+				"(FindNamedContainer(128) found none) — check the loadout panel actually mirrored the " +
+				"target's real backpack.");
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1479,30 +1818,39 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	//------------------------------------------------------------------------------------------------
 	override void OnMenuClose()
 	{
-		// Tear down the preview character + helpers. The networked target is never touched here.
-		if (m_PreviewCameraHelper)
-		{
-			m_PreviewCameraHelper.Destroy();
-			m_PreviewCameraHelper = null;
-		}
+		// Tear down the preview character. The networked target is never touched here. There is no
+		// camera ENTITY any more (PREVIEW_CAMERA_INDEX is a BaseWorld camera slot, not an owned
+		// entity — see SetupPreview's comment) so there is nothing to delete for it; the slot simply
+		// stops being read once m_wPreview is destroyed with the rest of this menu's widget tree.
 
 		// Stop listening for a catalog build that may outlive this menu.
 		GRAD_ArsenalService service = GRAD_ArsenalService.GetInstance();
 		if (service && service.GetCatalogIndex())
 			service.GetCatalogIndex().GetOnComplete().Remove(OnCatalogReady);
 
+		// Un-register our own Q/E listeners (see SetupCategoryRail's AddActionListener comment) — an
+		// InputManager-level listener outlives this menu instance otherwise, and would keep calling
+		// OnTabLeftPressed/OnTabRightPressed (touching a by-then-destroyed m_TabView) after close.
+		if (m_bTabActionListenersAdded)
+		{
+			InputManager inputMgr = GetGame().GetInputManager();
+			if (inputMgr)
+			{
+				inputMgr.RemoveActionListener("MenuTabLeft", EActionTrigger.DOWN, OnTabLeftPressed);
+				inputMgr.RemoveActionListener("MenuTabRight", EActionTrigger.DOWN, OnTabRightPressed);
+			}
+			m_bTabActionListenersAdded = false;
+		}
+
 		GRAD_LoadoutApply.CleanupCreated(m_aPreviewCreated);
 
-		// The clone is ours (SpawnLocal) — release the widget binding, then delete it.
-		if (m_PreviewManager && m_wPreview)
-			m_PreviewManager.SetPreviewItem(m_wPreview, null);
-
+		// The clone is ours (SpawnLocal) — delete it directly (no widget-binding release call needed;
+		// unlike the old ItemPreviewManagerEntity path, RenderTargetWidget doesn't own the character).
 		if (m_PreviewCharacter)
 		{
 			SCR_EntityHelper.DeleteEntityAndChildren(m_PreviewCharacter);
 			m_PreviewCharacter = null;
 		}
-		m_PreviewAttribs = null;
 
 		super.OnMenuClose();
 		GRAD_Log.Info("ArsenalMenu: closed");
@@ -1521,16 +1869,15 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		// We still need to REACT to the tab change (repopulate the shared grid, reframe the preview).
 		// PollTabChange() compares GetShownTab() against our cached index and reacts on change; this
 		// call was missing (defined but never invoked), which is why the grid stayed frozen on tab 0.
-		PollTabChange();
+		PollTabChange(tDelta);
 
-		// Drive preview orbit/zoom: feed the SAME persistent attribs the manager renders from, so the
-		// helper's mouse-driven RotateItemCamera/ZoomCamera actually show. Re-push on change.
-		//
 		// SAFETY: re-Deactivate() the clone each frame to keep the character-lifetime system from
-		// reaping it (a script-spawned character clone gets deleted after a timeout otherwise, and the
-		// next SetPreviewItem on the freed entity is a native crash — observed ~20s after open). Also
+		// reaping it (a script-spawned character clone gets deleted after a timeout otherwise). Also
 		// re-fetch its inventory component as a liveness probe; if it's gone, the entity was reaped, so
-		// null our handle and stop touching it rather than dereference freed memory.
+		// null our handle and stop touching it rather than dereference freed memory. Unlike the old
+		// ItemPreviewManager path, there is no per-frame SetPreviewItem push to skip if reaped — the
+		// RenderTargetWidget just keeps rendering whatever the camera currently sees, so a reaped
+		// character simply stops appearing in frame rather than crashing on the next render call.
 		if (m_PreviewCharacter)
 		{
 			GenericEntity ge = GenericEntity.Cast(m_PreviewCharacter);
@@ -1544,12 +1891,17 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			}
 		}
 
-		if (m_PreviewCameraHelper && m_PreviewAttribs && m_PreviewManager && m_wPreview && m_PreviewCharacter)
-		{
-			bool changed = m_PreviewCameraHelper.Update(tDelta, m_PreviewAttribs);
-			if (changed)
-				m_PreviewManager.SetPreviewItem(m_wPreview, m_PreviewCharacter, m_PreviewAttribs);
-		}
+		// Re-apply the camera SLOT's transform every frame — it is not persistent state we own (see
+		// PositionCamera's comment: vanilla's own PIP camera re-applies every frame for the same
+		// reason). m_fCameraDistance is set by FrameFullBody/FrameForCategory and stays 0 until the
+		// preview is set up, so this is a no-op before SetupPreview ever runs.
+		if (m_fCameraDistance > 0.0)
+			PositionCamera(m_fCameraDistance, PREVIEW_CAMERA_EYE_HEIGHT);
+
+		// No per-frame mouse-orbit/zoom handling anymore (SCR_InventoryCharacterWidgetHelper was tied to
+		// ItemPreviewWidget/PreviewRenderAttributes, which no longer apply here). The camera is static
+		// once FrameFullBody/FrameForCategory places it; live re-orbiting via mouse drag would need a
+		// new input handler driving PositionCamera(), not implemented in this pass.
 	}
 }
 

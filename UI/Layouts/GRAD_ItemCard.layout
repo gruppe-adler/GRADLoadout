@@ -52,12 +52,13 @@ SizeLayoutWidgetClass {
          MinDesiredWidth 96
          MinDesiredHeight 96
          {
-          ImageWidgetClass "{A0000000000000A4}" {
+          ItemPreviewWidgetClass "{A0000000000000A4}" {
            Name "CardIcon"
            Slot LayoutSlot "{A0000000000000A5}" {
             SizeMode Fill
            }
-           Color 1 1 1 1
+           Filter Bilinear
+           Format LDR
           }
          }
         }
