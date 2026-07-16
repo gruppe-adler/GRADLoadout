@@ -161,12 +161,31 @@ FrameWidgetClass {
           SizeMode Auto
          }
          {
-          EditBoxWidgetClass "{D2A3B4C5D6E75003}" {
-           Name "SearchBox"
-           Slot LayoutSlot "{D2A3B4C5D6E75004}" {
+          OverlayWidgetClass "{D2A3B4C5D6E75008}" {
+           Name "SearchBoxStack"
+           Slot LayoutSlot "{D2A3B4C5D6E75009}" {
             SizeMode Fill
            }
-           Text ""
+           {
+            ImageWidgetClass "{D2A3B4C5D6E7500A}" {
+             Name "SearchBoxBg"
+             Slot OverlayWidgetSlot "{D2A3B4C5D6E7500B}" {
+              HorizontalAlign 3
+              VerticalAlign 3
+             }
+             Color 1 1 1 0.15
+            }
+            EditBoxWidgetClass "{D2A3B4C5D6E75003}" {
+             Name "SearchBox"
+             Slot OverlayWidgetSlot "{D2A3B4C5D6E75004}" {
+              HorizontalAlign 3
+              VerticalAlign 3
+              Padding 8 4 8 4
+             }
+             "Use placeholder text" 1
+             "Placeholder text" "Search"
+            }
+           }
           }
           ButtonWidgetClass "{D2A3B4C5D6E75005}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
            Name "ButtonListView"

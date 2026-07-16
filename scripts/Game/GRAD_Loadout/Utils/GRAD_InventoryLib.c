@@ -239,6 +239,33 @@ class GRAD_InventoryLib
 		array<BaseInventoryStorageComponent> roots = {};
 		GetTopLevelStorages(character, roots);
 
+		// DIAGNOSTIC (2026-07-16, live-investigating "ADD TO BACKPACK fails right after equipping the
+		// backpack itself, works after Confirm"): the loadout panel's own fill-bar readout uses this
+		// exact same call chain and DID correctly show the backpack as worn immediately after equip
+		// (live-confirmed), which rules out a stale/delayed manager index for TOP-LEVEL storage
+		// discovery. The remaining live theory: CollectDestinationContainersRecursive's `owner !=
+		// character` guard only ever records a storage found ONE LEVEL BELOW a root (a container nested
+		// inside a slot on the character) — if a freshly-equipped backpack's OWN storage becomes a root
+		// itself (returned directly by GetTopLevelStorages) rather than something nested inside a
+		// character-owned root storage, this recursive walk would never reach the `owner != character`
+		// branch for it at all, since the recursion starts one level too deep. Logs each root's owner
+		// (should read "<null>"/the character itself for true top-level storages) and slot count so the
+		// live shape of GetTopLevelStorages' output right after a backpack equip can be compared against
+		// after Confirm. Remove once this is root-caused.
+		foreach (BaseInventoryStorageComponent rootDiag : roots)
+		{
+			if (!rootDiag)
+				continue;
+
+			IEntity rootOwner = rootDiag.GetOwner();
+			string rootOwnerName = "<null>";
+			if (rootOwner)
+				rootOwnerName = GetEntityShortName(rootOwner);
+
+			GRAD_Log.Info(string.Format("CollectDestContainersDiag: root storage=%1 owner=%2 slots=%3",
+				rootDiag.Type().ToString(), rootOwnerName, rootDiag.GetSlotsCount()));
+		}
+
 		foreach (BaseInventoryStorageComponent storage : roots)
 			CollectDestinationContainersRecursive(character, index, storage, outContainers, 0);
 

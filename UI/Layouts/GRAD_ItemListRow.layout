@@ -1,69 +1,87 @@
-ButtonWidgetClass {
- Name "ListRowButton"
- style blank
- components {
-  SCR_InputButtonComponent "{E1F2A3B4C5D60001}" {
-   m_sActionName "MenuSelect"
-  }
+SizeLayoutWidgetClass {
+ Name "ListRowSize"
+ Slot LayoutSlot {
+  SizeMode Fill
  }
+ AllowHeightOverride 1
+ HeightOverride 72
+ MinDesiredHeight 72
  {
-  OverlayWidgetClass "{E1F2A3B4C5D60002}" {
-   Name "ListRowStack"
-   {
-    ImageWidgetClass "{E1F2A3B4C5D60003}" {
-     Name "ListRowBg"
-     Slot OverlayWidgetSlot "{E1F2A3B4C5D60004}" {
-      HorizontalAlign 3
-      VerticalAlign 3
-     }
-     Color 0.1 0.11 0.13 0.9
+  ButtonWidgetClass "{E1F2A3B4C5D60001}" {
+   Name "CardButton"
+   style blank
+   components {
+    SCR_InputButtonComponent "{E1F2A3B4C5D60002}" {
+     m_sActionName "MenuSelect"
     }
-    HorizontalLayoutWidgetClass "{E1F2A3B4C5D60005}" {
-     Name "ListRowContent"
-     Slot OverlayWidgetSlot "{E1F2A3B4C5D60006}" {
-      HorizontalAlign 3
-      VerticalAlign 3
+   }
+   Slot LayoutSlot "{E1F2A3B4C5D60003}" {
+    SizeMode Fill
+   }
+   {
+    OverlayWidgetClass "{E1F2A3B4C5D60004}" {
+     Name "ListRowStack"
+     Slot LayoutSlot "{E1F2A3B4C5D60005}" {
+      SizeMode Fill
      }
      {
-      SizeLayoutWidgetClass "{E1F2A3B4C5D60007}" {
-       Name "ListRowIconSize"
-       Slot LayoutSlot "{E1F2A3B4C5D60008}" {
-        Padding 4 4 4 4
+      ImageWidgetClass "{E1F2A3B4C5D60006}" {
+       Name "TileBg"
+       Slot OverlayWidgetSlot "{E1F2A3B4C5D60007}" {
+        HorizontalAlign 3
+        VerticalAlign 3
        }
-       AllowWidthOverride 1
-       WidthOverride 64
-       AllowHeightOverride 1
-       HeightOverride 64
-       MinDesiredWidth 64
-       MinDesiredHeight 64
+       Color 0.1 0.11 0.13 0.9
+      }
+      HorizontalLayoutWidgetClass "{E1F2A3B4C5D60008}" {
+       Name "ListRowContent"
+       Slot OverlayWidgetSlot "{E1F2A3B4C5D60009}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+       }
        {
-        ItemPreviewWidgetClass "{E1F2A3B4C5D60009}" {
-         Name "ListRowIcon"
-         Slot LayoutSlot "{E1F2A3B4C5D6000A}" {
+        SizeLayoutWidgetClass "{E1F2A3B4C5D6000A}" {
+         Name "ListRowIconSize"
+         Slot LayoutSlot "{E1F2A3B4C5D6000B}" {
+          Padding 4 4 4 4
+         }
+         AllowWidthOverride 1
+         WidthOverride 64
+         AllowHeightOverride 1
+         HeightOverride 64
+         MinDesiredWidth 64
+         MinDesiredHeight 64
+         {
+          ItemPreviewWidgetClass "{E1F2A3B4C5D6000C}" {
+           Name "ListRowIcon"
+           Slot LayoutSlot "{E1F2A3B4C5D6000D}" {
+            SizeMode Fill
+           }
+           Filter Bilinear
+           Format LDR
+          }
+         }
+        }
+        TextWidgetClass "{E1F2A3B4C5D6000E}" {
+         Name "ListRowName"
+         Slot LayoutSlot "{E1F2A3B4C5D6000F}" {
+          Padding 12 0 0 0
           SizeMode Fill
          }
-         Filter Bilinear
-         Format LDR
+         Text ""
+         "Horizontal Alignment" Left
+         "Vertical Alignment" Center
+        }
+        TextWidgetClass "{E1F2A3B4C5D60010}" {
+         Name "ListRowCount"
+         Slot LayoutSlot "{E1F2A3B4C5D60011}" {
+          Padding 4 0 12 0
+         }
+         Text ""
+         "Vertical Alignment" Center
+         "Horizontal Alignment" Right
         }
        }
-      }
-      TextWidgetClass "{E1F2A3B4C5D6000B}" {
-       Name "ListRowName"
-       Slot LayoutSlot "{E1F2A3B4C5D6000C}" {
-        Padding 12 0 0 0
-        SizeMode Fill
-       }
-       Text ""
-       "Vertical Alignment" Center
-      }
-      TextWidgetClass "{E1F2A3B4C5D6000D}" {
-       Name "ListRowCount"
-       Slot LayoutSlot "{E1F2A3B4C5D6000E}" {
-        Padding 4 0 12 0
-       }
-       Text ""
-       "Vertical Alignment" Center
-       "Horizontal Alignment" Right
       }
      }
     }

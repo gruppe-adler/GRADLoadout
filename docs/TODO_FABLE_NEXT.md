@@ -1,10 +1,105 @@
 # TODO — next session
 
+## -1. NEW BUG: freshly-equipped backpack (and likely vest) not usable as a destination until Confirm
+
+**Reported live**: equip a backpack via double-click/EQUIP. The right-hand loadout panel correctly shows
+it as worn (fill-bar/percent readout, live-confirmed) — so container DISCOVERY for the loadout panel
+itself works immediately. But trying to ADD an item INTO that same freshly-equipped backpack fails right
+after equip; it only starts working after Confirm. Likely affects the vest the same way (not yet
+confirmed specifically for vest, but it goes through the identical code path).
+
+**Investigated, not yet root-caused**: `OnAddToBackpack`/`RefreshLoadoutSlot` both call the exact same
+`FindNamedContainer(128)` → `FindContainerStorage` → `GRAD_InventoryLib.CollectDestinationContainers`
+chain — so if the loadout panel's readout is right but the ADD button still fails, they can't actually be
+calling different logic; something about the CALL TIMING or the freshly-equipped entity's storage shape
+must differ between "read via the panel refresh path" and whatever specific moment ADD's check runs, OR
+(the live theory a diagnostic was added for) `CollectDestinationContainersRecursive`'s own
+`owner != character` guard structurally only ever records a storage found ONE LEVEL BELOW a top-level
+root — if a freshly-equipped backpack's own storage becomes a root ITSELF (returned directly by
+`GetTopLevelStorages`) rather than appearing nested inside a character-owned root storage, the recursive
+walk would never reach the branch that would register it, since recursion starts one level too deep for
+that specific shape. Unconfirmed whether Confirm changes this because Confirm re-applies via a full
+capture/clear/re-spawn cycle that might construct the storage graph differently than the incremental
+single-item apply path `AddSelectedToContainer`/`ApplyToPreview` uses for a plain equip click.
+
+**Diagnostic added** (`GRAD_InventoryLib.CollectDestinationContainers`, `GRAD_InventoryLib.c`): logs every
+top-level storage's type, owner (or `<null>`), and slot count every time it's called. **Not yet
+live-tested.** Needs: equip a backpack, immediately try ADD TO BACKPACK (or double-click a stackable
+item) and capture the log, then Confirm and repeat the exact same add — compare the two
+`CollectDestContainersDiag` dumps. If the backpack's own storage is present as a root in BOTH cases with
+the same owner/slot count, the bug is elsewhere (worth checking `FindContainerStorage`'s type-matching
+step, `GetArsenalTypeForPrefab` for a freshly-spawned-this-frame entity, or a manager-cache staleness this
+diagnostic wouldn't catch). If the backpack's storage is simply ABSENT from the root list right after
+equip but present after Confirm, that confirms the manager-index-staleness theory and the fix would be
+either forcing a manager refresh after equip or discovering containers via a different, more
+immediately-consistent API. **Do not guess at a fix before running this test.**
+
 Everything below is **uncommitted** on `main` as of 2026-07-16. Old handoff docs
 (`HANDOFF_2026-07-15.md`, `HANDOFF_2026-07-16.md`, `ARSENAL_STATUS_2026-07-14.md`) still hold the engine
 facts (isolated-BaseWorld preview architecture, the `EquipAny`-orphaning garment-reequip bug) — read them
 for background if touching the preview/apply code again. This doc tracks only what's actively being
 worked on.
+
+## 0. Live search + list-view toggle (NEW, implemented, needs live test)
+
+**The idea** (user request): a text search box above the item grid (below the main tabs) that filters
+live as you type, plus a toggleable list-view mode — thumb on the left, title on the right — as an
+alternative to the icon-tile grid.
+
+**What already existed to build on**: `GRAD_ItemBrowser.SetSearch(string)`/`m_sSearch` (blank = no
+filter, matches against display name) already existed and was already used by `GetFiltered` — just never
+wired to any UI, exactly like the faction filter before the previous update.
+
+**Search box** (`GRAD_ArsenalMenu.c`/`GRAD_ArsenalMenu.layout`):
+- New `SearchRow` (plain `EditBoxWidgetClass` + the list-view toggle button, side by side) inserted
+  between `SubCategoryScroll` and `CategoryItemsScroll`.
+- **No confirmed live-text-changed event exists on the base `EditBoxWidget`** — verified via
+  `api_search`; only `SCR_EditBoxComponent`/`SCR_ChangeableComponentBase` (vanilla components, not used
+  here, same reasoning as the faction-pill rewrite) expose `m_OnChanged`. Rather than guess at an
+  unconfirmed callback the way a previous session got burned assuming `SCR_TabViewComponent.GetOnChanged()`
+  would just work, this reuses `PollTabChange`'s own already-proven pattern: `PollSearchChange()`
+  (called from `OnMenuUpdate`, right after `PollTabChange`) reads `EditBoxWidget.GetText()` every frame
+  and only reacts when it differs from `m_sLastPolledSearch`, calling `m_Browser.SetSearch(...)` then
+  `PopulateItems()`.
+- Did NOT vendor a copy of vanilla `WLib_EditBoxSearch.layout` (referenced as fair-to-use in
+  `PROVENANCE.md` but never actually copied into this project) — Workbench wasn't connected this
+  session to inspect its real structure, and the faction-pill crash earlier this session was a direct
+  lesson in what happens when a vanilla layout's child-slot shape is guessed at instead of verified. A
+  plain, self-contained `EditBoxWidgetClass` (a real, verified widget class name) was used instead — less
+  visually polished than the vanilla search box (no built-in magnifier icon/placeholder styling) but
+  carries no risk of the same "does not accept more children"-class crash. **Worth revisiting once
+  Workbench is available to actually read `WLib_EditBoxSearch.layout`'s real structure.**
+
+**List-view toggle** (`GRAD_ArsenalMenu.c`/`GRAD_ArsenalMenu.layout`):
+- New `UI/Layouts/GRAD_ItemListRow.layout` (+ `.meta`, GUID `{E1F2A3B4C5D61001}`): a self-contained
+  `style blank` button (same pattern as `GRAD_ItemCard.layout`'s own `CardButton` — chosen deliberately
+  after the faction-pill lesson about `WLib_ButtonText.layout` only accepting one child) with a thumbnail
+  (`ItemPreviewWidgetClass`, same live 3D preview mechanism the grid cards already use) on the left and
+  name/count text on the right. Its background image is deliberately named `TileBg` — the SAME name the
+  grid card layout uses — so `OnItemRowClicked`'s existing selection-highlight lookup
+  (`cardWidget.FindAnyWidget(WIDGET_CARD_BG)`) works unmodified for both view modes with no special-casing.
+- New `CategoryListScroll`/`CategoryList` (a `ScrollLayoutWidgetClass` wrapping a plain
+  `VerticalLayoutWidgetClass`) added as a sibling of the existing `CategoryItemsScroll`/`CategoryItems` —
+  both containers exist in the layout at all times; `ApplyViewMode()` shows exactly one via `SetVisible`
+  or the other, and `PopulateItems()` fills whichever is currently visible (`m_bListView` flag) and leaves
+  the other alone rather than keeping both in sync for a view the user isn't looking at.
+- `PopulateItems`'s grouping/expand-collapse logic (`GetGrouped`, `IsGroupExpanded`, `ConciseVariant`) is
+  completely unchanged and shared between both view modes — only the per-item widget-creation step
+  differs. `CreateItemCard`/`CreateGroupHeaderCard` now call a new dispatcher, `CreateItemWidget`, which
+  routes to the existing `CreateItemCardWidget` (grid) or the new `CreateItemListRowWidget` (list) based
+  on `m_bListView`. `CreateItemListRowWidget` has no grid-cell/`UniformGridSlot` addressing to do — a
+  plain `VerticalLayoutWidget` just stacks children in append order.
+- `OnListViewToggle` (bound to the new `ButtonListView`) flips `m_bListView`, calls `ApplyViewMode()`,
+  then `PopulateItems()`.
+
+**Needs a layout reimport** (two layout files touched, one new file) **+ a full Workbench restart**, then
+a live check: does the search box actually filter as you type (not just on Enter/focus-lost — the poll
+runs every frame, so it should be instant), does toggling list view actually swap containers and
+repopulate with the thumb-left/title-right shape, does clicking a list row still select it into the
+Selected-Item panel with the same amber highlight the grid cards get, does group-header expand/collapse
+still work in list mode, does switching top tabs or sub-tabs while in list mode correctly stay in list
+mode (nothing resets `m_bListView` except the user's own toggle click — confirm that's actually true
+live, not just true by reading the code).
 
 ## 1. Sub-tab clustering within each top-level tab — implemented, needs live test
 

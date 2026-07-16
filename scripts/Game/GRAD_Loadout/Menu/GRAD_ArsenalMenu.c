@@ -284,10 +284,11 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected Widget m_wFactionRow;
 	protected ref array<ref GRAD_FactionPillHandler> m_aFactionHandlers = {};
 
-	// Parallel to m_aFactionHandlers (same index = same pill) — each pill's OWN border image, hand-
-	// recolored on selection (GRAD_FactionPill.layout does not inherit WLib_ButtonText.layout, so there
-	// is no SCR_ButtonTextComponent toggle state to piggyback on here, unlike the sub-category pills).
-	protected ref array<ImageWidget> m_aFactionBorders = {};
+	// Parallel to m_aFactionHandlers (same index = same pill) — each pill's own ROOT widget, so
+	// SetFactionPillActive can recolor both its border AND background on selection
+	// (GRAD_FactionPill.layout does not inherit WLib_ButtonText.layout, so there is no
+	// SCR_ButtonTextComponent toggle state to piggyback on here, unlike the sub-category pills).
+	protected ref array<Widget> m_aFactionPills = {};
 
 	// Faction pill layout (icon-only toggle button, self-contained — does NOT inherit
 	// WLib_ButtonText.layout; see CreateFactionPill's comment for why). GUID must match
@@ -366,7 +367,8 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	protected const string WIDGET_LIST_ROW_ICON  = "ListRowIcon";
 	protected const string WIDGET_LIST_ROW_NAME  = "ListRowName";
 	protected const string WIDGET_LIST_ROW_COUNT = "ListRowCount";
-	protected const string WIDGET_LIST_ROW_BG    = "ListRowBg";
+	// List rows reuse WIDGET_CARD_BG ("TileBg") for their background — see GRAD_ItemListRow.layout —
+	// so OnItemRowClicked's selection-highlight lookup works unmodified for both view modes.
 
 	// Loadout-panel contents line: [-] [+] label row. GUID must match GRAD_LoadoutLine.layout.meta.
 	protected const ResourceName LINE_LAYOUT = "{C1D2E3F401020304}UI/Layouts/GRAD_LoadoutLine.layout";
@@ -1391,6 +1393,26 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		else
 			RebuildFactionRow();
 
+		m_wSearchBox = EditBoxWidget.Cast(root.FindAnyWidget(WIDGET_SEARCH_BOX));
+		if (!m_wSearchBox)
+			GRAD_Log.Warn(string.Format("ArsenalMenu: search box widget '%1' not found in layout", WIDGET_SEARCH_BOX));
+
+		m_wItemListView = root.FindAnyWidget(WIDGET_ITEM_LIST);
+		m_wItemGridScroll = root.FindAnyWidget(WIDGET_ITEM_GRID_SCROLL);
+		m_wItemListScroll = root.FindAnyWidget(WIDGET_ITEM_LIST_SCROLL);
+		if (!m_wItemListView || !m_wItemGridScroll || !m_wItemListScroll)
+			GRAD_Log.Warn("ArsenalMenu: list-view widgets not fully found in layout");
+		else
+			ApplyViewMode();	// hide CategoryListScroll (m_bListView defaults false) before first PopulateItems
+
+		Widget listViewBtn = root.FindAnyWidget(WIDGET_BTN_LIST_VIEW);
+		if (listViewBtn)
+		{
+			SCR_InputButtonComponent btn = SCR_InputButtonComponent.FindComponent(listViewBtn);
+			if (btn)
+				btn.m_OnActivated.Insert(OnListViewToggle);
+		}
+
 		// The three top-level panes (PaneLeftCategories/PaneCenterPreview/PaneRightContainer) are all
 		// plain SizeMode Fill in the layout, so they split available width EVENLY (1/3 each). With
 		// GRID_COLUMNS=2 fixed-220px cards, an even 1/3 share left roughly a third of the grid pane as
@@ -1526,6 +1548,27 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		// was never an intermediate value to catch, only the already-doubled final one).
 		if (shown != m_iSelectedCategory)
 			SelectCategoryByIndex(shown);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Poll the search box's text once per frame (called from OnMenuUpdate) and react on change — same
+	//! poll-and-diff pattern as PollTabChange, for the same reason: no confirmed live-text-changed event
+	//! exists on the base EditBoxWidget (see m_wSearchBox's field comment), so a per-frame GetText()
+	//! compare sidesteps guessing at an unverified callback signature.
+	protected void PollSearchChange()
+	{
+		if (!m_wSearchBox)
+			return;
+
+		string current = m_wSearchBox.GetText();
+		if (current == m_sLastPolledSearch)
+			return;
+
+		m_sLastPolledSearch = current;
+		if (m_Browser)
+			m_Browser.SetSearch(current);
+
+		PopulateItems();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1704,7 +1747,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			return;
 
 		m_aFactionHandlers.Clear();
-		m_aFactionBorders.Clear();
+		m_aFactionPills.Clear();
 		ClearChildren(m_wFactionRow);
 
 		CreateFactionPill(string.Empty, "ALL", ResourceName.Empty);
@@ -1766,27 +1809,48 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		GRAD_FactionPillHandler handler = new GRAD_FactionPillHandler(this, factionKey);
 		m_aFactionHandlers.Insert(handler);
 
-		ImageWidget border = ImageWidget.Cast(pill.FindAnyWidget(WIDGET_FACTION_PILL_BORDER));
-		m_aFactionBorders.Insert(border);
-		SetFactionPillActive(border, factionKey == m_sSelectedFactionKey);
+		m_aFactionPills.Insert(pill);
+		SetFactionPillActive(pill, factionKey == m_sSelectedFactionKey);
 
-		SCR_InputButtonComponent btn = SCR_InputButtonComponent.FindComponent(pill);
+		// BUG FIX (live-diagnosed — faction pills didn't respond to clicks): FindComponent(pill) only
+		// checks components attached DIRECTLY to the widget passed in — `pill` here is the root
+		// SizeLayoutWidgetClass wrapper ("FactionPillSize") CreateWidgets returns, but
+		// GRAD_FactionPill.layout's SCR_InputButtonComponent lives one level down on its child
+		// "FactionPillButton". Same root cause and same fix as GRAD_ArsenalRowHandler's own
+		// "CardButton" comment — use the name+parent search instead of a same-widget-only lookup.
+		SCR_InputButtonComponent btn = SCR_InputButtonComponent.GetInputButtonComponent("FactionPillButton", pill);
 		if (btn)
 			btn.m_OnActivated.Insert(handler.OnActivated);
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Show/hide a faction pill's amber selection border (0 alpha when inactive, matching the layout's
-	//! authored default — see GRAD_FactionPill.layout's FactionPillBorder Color).
-	protected void SetFactionPillActive(ImageWidget border, bool active)
+	//! Set a faction pill's active look: an amber border AND a brightened background tint, not just the
+	//! thin 2px outline alone (per user feedback, "active state is unclear" — a lone hairline border
+	//! against the dark background wasn't visible enough). `pill` is the widget CreateFactionPill
+	//! stored (the SizeLayoutWidgetClass root), so both children are resolved by name here rather than
+	//! tracking two separate parallel arrays.
+	protected void SetFactionPillActive(Widget pill, bool active)
 	{
-		if (!border)
+		if (!pill)
 			return;
 
+		ImageWidget border = ImageWidget.Cast(pill.FindAnyWidget(WIDGET_FACTION_PILL_BORDER));
+		ImageWidget bg = ImageWidget.Cast(pill.FindAnyWidget(WIDGET_FACTION_PILL_BG));
+
 		if (active)
-			border.SetColor(new Color(0.761, 0.386, 0.078, 1));
+		{
+			if (border)
+				border.SetColor(new Color(0.761, 0.386, 0.078, 1));
+			if (bg)
+				bg.SetColor(new Color(0.55, 0.4, 0.1, 0.9));	// same amber-fill used for the selected item card
+		}
 		else
-			border.SetColor(new Color(0.761, 0.386, 0.078, 0));
+		{
+			if (border)
+				border.SetColor(new Color(0.761, 0.386, 0.078, 0));
+			if (bg)
+				bg.SetColor(new Color(0.1, 0.11, 0.13, 0.9));	// back to the layout's authored default
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1797,13 +1861,13 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	{
 		m_sSelectedFactionKey = factionKey;
 
-		for (int i = 0; i < m_aFactionBorders.Count(); i++)
+		for (int i = 0; i < m_aFactionPills.Count(); i++)
 		{
 			GRAD_FactionPillHandler pillHandler = m_aFactionHandlers[i];
 			if (!pillHandler)
 				continue;
 
-			SetFactionPillActive(m_aFactionBorders[i], pillHandler.m_sFactionKey == factionKey);
+			SetFactionPillActive(m_aFactionPills[i], pillHandler.m_sFactionKey == factionKey);
 		}
 
 		if (!m_Browser)
@@ -1814,18 +1878,56 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Fill the item grid with the current tab's filtered records as icon cards. Variants of one base
-	//! name collapse under a header card that expands to its variant cards (reuses m_mExpandedGroups).
+	//! List-view toggle button clicked: flip m_bListView and repopulate into whichever container is now
+	//! active.
+	void OnListViewToggle()
+	{
+		m_bListView = !m_bListView;
+		ApplyViewMode();
+		PopulateItems();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Show the container matching m_bListView, hide the other. Both CategoryItemsScroll and
+	//! CategoryListScroll exist in the layout at all times — only one is ever visible. Also relabels the
+	//! toggle button to name the mode a click would SWITCH TO (not the mode currently active), matching
+	//! how a toggle button's caption is conventionally read.
+	protected void ApplyViewMode()
+	{
+		if (m_wItemGridScroll)
+			m_wItemGridScroll.SetVisible(!m_bListView);
+		if (m_wItemListScroll)
+			m_wItemListScroll.SetVisible(m_bListView);
+
+		Widget root = GetRootWidget();
+		if (root)
+		{
+			if (m_bListView)
+				SetButtonText(root, WIDGET_BTN_LIST_VIEW, "GRID VIEW");
+			else
+				SetButtonText(root, WIDGET_BTN_LIST_VIEW, "LIST VIEW");
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Fill the active item container (grid or list, per m_bListView) with the current tab's filtered
+	//! records. Variants of one base name collapse under a header row that expands to its variant rows
+	//! (reuses m_mExpandedGroups) — identical grouping logic for both view modes; only the per-item
+	//! widget (CreateItemCardWidget vs. CreateItemListRowWidget) and its container differ.
 	protected void PopulateItems()
 	{
-		if (!m_wItemList || !m_Browser)
+		Widget container = m_wItemList;
+		if (m_bListView)
+			container = m_wItemListView;
+
+		if (!container || !m_Browser)
 			return;
 
-		// Drop the previous card handlers BEFORE destroying their widgets, so no stale handler keeps an
+		// Drop the previous row handlers BEFORE destroying their widgets, so no stale handler keeps an
 		// invoker bound to a freed widget (that crashes the menu on the next click).
 		m_aItemRowHandlers.Clear();
-		ClearChildren(m_wItemList);
-		m_iGridCell = 0;	// reset the grid wrap counter for this rebuild
+		ClearChildren(container);
+		m_iGridCell = 0;	// reset the grid wrap counter for this rebuild (grid mode only; harmless in list mode)
 		m_wSelectedCardBg = null;	// the widget it pointed at was just destroyed above
 
 		// Precompute prefab->count over the preview once (cheap map), so each card is O(1) not O(items).
@@ -1845,7 +1947,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 				continue;
 			}
 
-			// Multi-variant: a header card (click to expand/collapse) then, when expanded, one card per
+			// Multi-variant: a header row (click to expand/collapse) then, when expanded, one row per
 			// variant labelled with its concise variant suffix.
 			bool expanded = IsGroupExpanded(group.m_sLabel);
 			CreateGroupHeaderCard(group, expanded);
@@ -1869,17 +1971,20 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		// every card into a sliver). UniformGridLayoutWidget exposes no fill-weight API at all — cells
 		// size from content, not a forced division — and CategoryItems is now wrapped in a
 		// ScrollLayoutWidget (CategoryItemsScroll) so the grid can grow past the pane's fixed height with
-		// the scroll container handling overflow.
+		// the scroll container handling overflow. CategoryList (list mode) is a plain VerticalLayoutWidget
+		// inside its own ScrollLayoutWidget (CategoryListScroll) — same overflow-handling shape, no
+		// grid-specific fill-weight trap to begin with.
 		//
-		// BUG FIX ("items only appear on scroll"): populating via SetColumn/SetRow does not itself
-		// trigger a relayout — the grid/scroll container kept its stale (often zero-height at first
-		// populate) bounds until some OTHER event forced a relayout, e.g. the user scrolling. Widget.
-		// Update() ("proto external void Update()", confirmed on the base Widget/ScrollLayoutWidget
-		// interface, not something added for this fix) forces that recompute immediately after the grid
-		// is filled, so the cards are visible without needing any user interaction first.
-		m_wItemList.Update();
-		if (m_wItemList.GetParent())
-			m_wItemList.GetParent().Update();	// the ScrollLayoutWidget wrapper's own content-size cache
+		// BUG FIX ("items only appear on scroll"): populating via SetColumn/SetRow (grid) or plain
+		// child-append (list) does not itself trigger a relayout — the container kept its stale (often
+		// zero-height at first populate) bounds until some OTHER event forced a relayout, e.g. the user
+		// scrolling. Widget.Update() ("proto external void Update()", confirmed on the base Widget/
+		// ScrollLayoutWidget interface, not something added for this fix) forces that recompute
+		// immediately after the container is filled, so items are visible without needing any user
+		// interaction first.
+		container.Update();
+		if (container.GetParent())
+			container.GetParent().Update();	// the ScrollLayoutWidget wrapper's own content-size cache
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1946,7 +2051,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Collapsible group header card: "Label (N)" with an expand marker. Clicking toggles expansion.
+	//! Collapsible group header row: "Label (N)" with an expand marker. Clicking toggles expansion.
 	protected void CreateGroupHeaderCard(notnull GRAD_ItemGroup group, bool expanded)
 	{
 		string marker;
@@ -1961,7 +2066,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (group.m_aItems.Count() > 0 && group.m_aItems[0])
 			previewPrefab = group.m_aItems[0].m_sPrefab;
 
-		Widget card = CreateItemCardWidget(marker + group.m_sLabel, string.Format("%1", group.GetCount()), "", previewPrefab);
+		Widget card = CreateItemWidget(marker + group.m_sLabel, string.Format("%1", group.GetCount()), previewPrefab);
 		if (!card)
 			return;
 
@@ -1980,7 +2085,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Create one item card (icon + name + count-on-preview) for a record. Clicking selects the item
+	//! Create one item row (icon + name + count-on-preview) for a record. Clicking selects the item
 	//! into the Selected-Item panel (which offers the ADD buttons) rather than equipping immediately.
 	protected void CreateItemCard(notnull GRAD_ArsenalItemRecord rec, string nameOverride)
 	{
@@ -1994,7 +2099,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		if (count > 0)
 			countText = count.ToString();
 
-		Widget card = CreateItemCardWidget(name, countText, "", rec.m_sPrefab);
+		Widget card = CreateItemWidget(name, countText, rec.m_sPrefab);
 		if (!card)
 			return;
 
@@ -2002,6 +2107,18 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		handler.m_Record = rec;
 		handler.m_bIsCategory = false;
 		m_aItemRowHandlers.Insert(handler);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Dispatch to the icon-tile grid card or the thumb-left/title-right list row, per m_bListView.
+	//! Both CreateItemCard and CreateGroupHeaderCard go through this single entry point so neither has
+	//! to know which view mode is active.
+	protected Widget CreateItemWidget(string name, string count, ResourceName prefab)
+	{
+		if (m_bListView)
+			return CreateItemListRowWidget(name, count, prefab);
+
+		return CreateItemCardWidget(name, count, "", prefab);
 	}
 
 	//! Build an icon tile card from GRAD_ItemCard.layout and place it in the next grid cell (wrapping
@@ -2044,6 +2161,35 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 			m_PreviewManager.SetPreviewItemFromPrefab(iconW, prefab, null, false);
 
 		return card;
+	}
+
+	//! Build a thumb-left/title-right list row from GRAD_ItemListRow.layout and append it to
+	//! m_wItemListView (a plain VerticalLayoutWidget — no grid coordinates needed, unlike the tile
+	//! grid). Same icon/name/count filling logic as CreateItemCardWidget, just different child widget
+	//! names and no UniformGridSlot addressing.
+	protected Widget CreateItemListRowWidget(string name, string count, ResourceName prefab)
+	{
+		WorkspaceWidget workspace = GetGame().GetWorkspace();
+		if (!workspace)
+			return null;
+
+		Widget row = workspace.CreateWidgets(LIST_ROW_LAYOUT, m_wItemListView);
+		if (!row)
+			return null;
+
+		TextWidget nameW = TextWidget.Cast(row.FindAnyWidget(WIDGET_LIST_ROW_NAME));
+		if (nameW)
+			nameW.SetText(name);
+
+		TextWidget countW = TextWidget.Cast(row.FindAnyWidget(WIDGET_LIST_ROW_COUNT));
+		if (countW)
+			countW.SetText(count);
+
+		ItemPreviewWidget iconW = ItemPreviewWidget.Cast(row.FindAnyWidget(WIDGET_LIST_ROW_ICON));
+		if (iconW && prefab != ResourceName.Empty && m_PreviewManager)
+			m_PreviewManager.SetPreviewItemFromPrefab(iconW, prefab, null, false);
+
+		return row;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -3078,6 +3224,7 @@ class GRAD_ArsenalMenu : ChimeraMenuBase
 		// PollTabChange() compares GetShownTab() against our cached index and reacts on change; this
 		// call was missing (defined but never invoked), which is why the grid stayed frozen on tab 0.
 		PollTabChange(tDelta);
+		PollSearchChange();
 
 		// SAFETY: re-Deactivate() the clone each frame to keep the character-lifetime system from
 		// reaping it (a script-spawned character clone gets deleted after a timeout otherwise). Also
