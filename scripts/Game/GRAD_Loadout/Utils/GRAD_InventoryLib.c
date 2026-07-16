@@ -472,7 +472,13 @@ class GRAD_InventoryLib
 			}
 			else
 			{
-				GRAD_Log.Debug(string.Format("ClearStorages: could not remove %1", GetEntityShortName(item)));
+				// DIAGNOSTIC (2026-07-14): bumped from Debug to Warn — Vest_ALICE_suspenders_1/
+				// Scabbard_Bayonet_M9 (attachment-style items on a vest's cloth node) consistently fail
+				// to re-place later in Apply() with "no suitable storage," even under force=true clears.
+				// If TryRemoveItemFromInventory is ALSO silently failing for these same items (i.e. they
+				// survive the clear and collide with their own captured re-application later), that would
+				// fully explain the symptom — this was invisible at Debug level.
+				GRAD_Log.Warn(string.Format("ClearStorages: could not remove %1 (force=%2)", GetEntityShortName(item), force));
 			}
 		}
 
@@ -489,7 +495,15 @@ class GRAD_InventoryLib
 	//!
 	//! Returns null if the prefab cannot be loaded (missing/unloaded content) — callers must treat
 	//! a missing prefab as a skip, not a fatal error.
-	static IEntity SpawnLocal(ResourceName prefab, vector position = vector.Zero)
+	//!
+	//! `world` (2026-07-15): optional target BaseWorld. Defaults to null = the live game world, which
+	//! is the historical behaviour every existing caller relies on. The arsenal menu's character
+	//! preview now passes its own ISOLATED preview world here (BaseWorld.CreateWorld) so the preview
+	//! clone is spawned into that world instead of the live one — see GRAD_ArsenalMenu.SetupPreview.
+	//! Passed straight through to SpawnEntityPrefabLocal, whose verified signature already accepts the
+	//! target world: `IEntity SpawnEntityPrefabLocal(notnull Resource templateResource,
+	//! BaseWorld world = null, EntitySpawnParams params = null)`.
+	static IEntity SpawnLocal(ResourceName prefab, vector position = vector.Zero, BaseWorld world = null)
 	{
 		if (prefab == ResourceName.Empty)
 			return null;
@@ -501,7 +515,10 @@ class GRAD_InventoryLib
 			return null;
 		}
 
-		BaseWorld world = GetGame().GetWorld();
+		// No explicit world requested -> fall back to the live game world (historical behaviour).
+		if (!world)
+			world = GetGame().GetWorld();
+
 		if (!world)
 		{
 			GRAD_Log.Error("SpawnLocal: no world available");

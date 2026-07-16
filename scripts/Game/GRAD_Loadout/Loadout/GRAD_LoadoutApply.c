@@ -10,8 +10,18 @@
 //!
 //! Two contexts, selected by the caller:
 //!  - REPLICATED: run on the server/authority; spawned items replicate to clients.
-//!  - LOCAL: run on the client for the preview mannequin; uses local-only spawning, nothing
-//!    replicates.
+//!  - LOCAL: run on the client for the preview mannequin; nothing replicates (the target itself is a
+//!    non-replicated SpawnEntityPrefabLocal clone).
+//!
+//! BUG FIX (2026-07-14, live-diagnosed): the LOCAL path used to pre-spawn a bare entity via
+//! GRAD_InventoryLib.SpawnLocal, then hand it cold into TryInsertItemInStorage/TryInsertItem/EquipAny.
+//! Every one of those calls returned `true` while doing nothing — a live worldPos diagnostic showed
+//! "placed" items still sitting at their raw spawn position <0,0,0>, never attached, leaving the
+//! preview character visibly naked. Root cause unconfirmed at the source level (InventoryStorage
+//! ManagerComponent is a native `proto external` class with no script source to read), but the fix,
+//! confirmed by matching the REPLICATED branch's own working strategy, is to use
+//! TrySpawnPrefabToStorage for BOTH paths — it spawns and inserts as one atomic manager-owned
+//! operation, instead of us inserting an already-existing entity separately.
 //!
 //! Resilience: a missing/unloaded prefab is skipped with a warning, never a hard failure. Every
 //! created entity is collected into an out-array so the caller can clean up (e.g. on cancel).
@@ -191,62 +201,228 @@ class GRAD_LoadoutApply
 
 		if (localOnly)
 		{
-			// Local preview path: spawn a non-replicated entity and insert it.
-			IEntity item = GRAD_InventoryLib.SpawnLocal(prefab);
-			if (!item)
-				return null;
+			// ROOT CAUSE FOUND (2026-07-14, live-diagnosed): the previous approach here — SpawnLocal a
+			// bare entity, then hand it cold into TryInsertItemInStorage/TryInsertItem/EquipAny — returned
+			// `true` from every one of those calls while doing NOTHING: the live worldPos diagnostic
+			// showed every "placed" item still sitting at <0,0,0> (its raw spawn position), never
+			// attached, on a character that then rendered visibly naked. Those manager methods are native
+			// `proto external` (no script source exists to confirm why), but the practical fact, tested
+			// live, is that pre-spawning the entity ourselves and inserting it separately does not work
+			// for a local/non-replicated entity.
+			//
+			// FIX: use TrySpawnPrefabToStorage — the SAME call the REPLICATED branch below already uses
+			// successfully — which spawns AND inserts as one atomic manager-owned operation instead of us
+			// handing it a cold pre-spawned entity. This mirrors the working replicated path as closely
+			// as possible instead of maintaining a second, apparently-broken insertion strategy.
+			string failTrail = "";
+			bool ok = false;
+			int slotID = -1;
 
-			bool inserted = false;
-
-			// Caller-chosen destination container wins: try it first (arsenal "put this in the vest").
-			// Falls through to the normal paths if the item won't fit there (full/incompatible).
 			if (preferredStorage)
-				inserted = manager.TryInsertItemInStorage(item, preferredStorage, -1);
-
-			if (!inserted && storage)
 			{
-				// Captured slot address: place at the recorded slot, else any free slot in it.
-				inserted = manager.TryInsertItemInStorage(item, storage, entry.m_iSlotIndex);
-				if (!inserted)
-					inserted = manager.TryInsertItemInStorage(item, storage, -1);
+				// BUG FIX (2026-07-15, live-diagnosed): double-clicking a baseline cosmetic accessory that
+				// is ALREADY attached to the destination container (e.g. Vest_ALICE_suspenders_1/
+				// Scabbard_Bayonet_M9/Canteen_US_01 already built into a worn vest) failed here with
+				// "preferred[ClothNodeStorageComponent] ... equipReplace[equipAnyFailed]" — the vest has no
+				// free slot for a SECOND copy of its own baked-in part, and EquipAny can't replace an item
+				// with an identical one either. Same root cause and same fix as the "already correctly
+				// equipped" short-circuit below for the captured-storage path: if the destination already
+				// directly holds this exact prefab, there is nothing to do — not a failure.
+				bool alreadyInPreferred = false;
+				int preferredSlots = preferredStorage.GetSlotsCount();
+				for (int pi = 0; pi < preferredSlots; pi++)
+				{
+					IEntity existingPreferred = preferredStorage.Get(pi);
+					if (existingPreferred && GRAD_InventoryLib.GetPrefabResourceName(existingPreferred) == prefab)
+					{
+						alreadyInPreferred = true;
+						break;
+					}
+				}
+
+				if (alreadyInPreferred)
+				{
+					GRAD_Log.Debug(string.Format("Apply: '%1' already present in preferred storage %2 (prefab-baseline match) — skipping re-place", prefab, preferredStorage.Type().ToString()));
+					spawnedOk = true;
+					return null;
+				}
+
+				ok = manager.TrySpawnPrefabToStorage(prefab, preferredStorage, -1);
+				if (!ok)
+					failTrail += string.Format("preferred[%1] ", preferredStorage.Type().ToString());
 			}
 
-			// No matched storage (or targeted placement failed): equip it. Clothing/gear (headgear,
-			// vest, uniform, backpack) lives in LOCKED loadout slots that plain insertion refuses;
-			// EquipAny routes the item to the correct loadout slot, replacing what's there. Falls
-			// back to free insertion (PURPOSE_ANY) for items that belong in a container (magazines,
-			// grenades, meds).
-			if (!inserted)
-				inserted = TryEquipOrInsert(manager, item);
-
-			if (!inserted)
+			if (!ok && storage)
 			{
-				GRAD_Log.Warn(string.Format("Apply(local): could not place '%1' (no suitable slot/storage)", prefab));
-				SCR_EntityHelper.DeleteEntityAndChildren(item);
+				slotID = entry.m_iSlotIndex;
+
+				// BUG FIX (2026-07-14): Vest_ALICE_suspenders_1/Scabbard_Bayonet_M9 (and similar) always
+				// failed here on a fresh clone whose PREFAB already spawns with baked-in default cosmetic
+				// gear (force=false deliberately preserves those locked nodes — see ClearStorages' own
+				// gotcha docs). If the captured item is the SAME prefab already occupying the target slot,
+				// the clone is already correctly equipped — this is not a failure, just nothing to do.
+				InventoryStorageSlot targetSlot = storage.GetSlot(slotID);
+				if (targetSlot)
+				{
+					IEntity existing = targetSlot.GetAttachedEntity();
+					if (existing && GRAD_InventoryLib.GetPrefabResourceName(existing) == prefab)
+					{
+						GRAD_Log.Debug(string.Format("Apply: '%1' already occupies its target slot %2 (prefab-baseline match) — skipping re-place", prefab, slotID));
+						spawnedOk = true;
+						return existing;
+					}
+				}
+
+				ok = manager.TrySpawnPrefabToStorage(prefab, storage, slotID);
+				if (!ok)
+				{
+					slotID = -1;
+					ok = manager.TrySpawnPrefabToStorage(prefab, storage, -1);
+				}
+				if (!ok)
+					failTrail += string.Format("captured[%1#%2] ", storage.Type().ToString(), entry.m_iSlotIndex);
+			}
+
+			// BUG FIX (2026-07-15, live-diagnosed): headgear could only be swapped when the uniform was
+			// UNworn. Root cause: when there was no matched captured storage (`storage` null — exactly
+			// the plain EQUIP-click case with no destination chosen), the code used to try the generic
+			// PURPOSE_ANY insert BEFORE EquipAny. PURPOSE_ANY happily stuffs the item into ANY free slot
+			// ANYWHERE (a pocket, an ammo pouch — not necessarily the item's actual loadout slot) and
+			// reports success, so EquipAny's REPLACE-worn-item behavior was never reached — the item
+			// landed in generic inventory space instead of the headgear slot, live-confirmed via "it adds
+			// the item to the inventory rather than equipping it to headgear slot." It only ever appeared
+			// to "work" once the uniform was removed because that happened to change which slots the
+			// engine considered free/chosen — never the actual mechanism.
+			//
+			// FIX: when there is no matched storage, try TryEquipReplace FIRST (it resolves the item's
+			// real loadout slot and REPLACES whatever currently occupies it — real vanilla behavior,
+			// verified this project's own memory/gotchas), and only fall back to the generic PURPOSE_ANY
+			// insert if EquipAny itself fails (e.g. for an item type with no dedicated equip slot at all).
+			BaseInventoryStorageComponent landedStorage = storage;
+			if (!ok && !storage)
+			{
+				IEntity spawnedItem = TryEquipReplace(manager, prefab, true, failTrail);
+				if (spawnedItem)
+				{
+					spawnedOk = true;
+					return spawnedItem;
+				}
+			}
+
+			// No matched storage (or targeted spawn failed) and EquipAny didn't take it either: let the
+			// engine choose the most suitable owned storage, same fallback the replicated branch uses.
+			if (!ok)
+			{
+				ok = manager.TrySpawnPrefabToStorage(prefab, null, -1, EStoragePurpose.PURPOSE_ANY);
+				landedStorage = null; // engine-chosen; we don't know which one without reading back
+				slotID = -1;
+				if (!ok)
+					failTrail += "engineChosen ";
+			}
+
+			// Last resort for the case a captured `storage` WAS matched but its targeted spawn failed
+			// (e.g. the slot is occupied by a different prefab) — retry via EquipAny here too, since the
+			// branch above only covers the no-matched-storage case.
+			if (!ok)
+			{
+				IEntity spawnedItem = TryEquipReplace(manager, prefab, true, failTrail);
+				if (spawnedItem)
+				{
+					spawnedOk = true;
+					return spawnedItem;
+				}
+			}
+
+			if (!ok)
+			{
+				GRAD_Log.Warn(string.Format("Apply(local): could not place '%1' — failed steps: %2", prefab, failTrail));
 				return null;
 			}
 
 			spawnedOk = true;
-			return item;
+
+			// Only read back the entity when we know its exact storage+slot (matches the replicated
+			// branch's own comment/behavior below) — engine-chosen placement can't be reliably located.
+			if (landedStorage)
+				return landedStorage.Get(slotID);
+
+			return null;
 		}
 
 		// Replicated path: the manager spawns and inserts in one authoritative step. A null storage
 		// tells the engine to choose the most suitable owned storage.
-		bool ok;
+		//
+		// BUG FIX (2026-07-15): `ok` used to be declared but left UNASSIGNED when `storage` was null (the
+		// `if (storage)` block below was skipped entirely) — reading an uninitialized bool at the `if
+		// (!ok)` engine-chosen fallback further down was undefined behavior, not a deliberate "no matched
+		// storage" branch. Explicitly false here so "no captured storage" reliably falls through to the
+		// EquipAny/PURPOSE_ANY fallbacks below instead of depending on whatever garbage `ok` happened to
+		// hold.
+		bool ok = false;
 		int slotID = -1;
 		if (storage)
 		{
 			slotID = entry.m_iSlotIndex;
+
+			// Same "already correctly equipped" short-circuit as the local branch above — if
+			// ClearStorages failed to remove this exact prefab from this exact slot (e.g. an
+			// attachment-style item its own removal call refuses), don't treat the resulting collision
+			// as a placement failure.
+			InventoryStorageSlot targetSlot = storage.GetSlot(slotID);
+			if (targetSlot)
+			{
+				IEntity existing = targetSlot.GetAttachedEntity();
+				if (existing && GRAD_InventoryLib.GetPrefabResourceName(existing) == prefab)
+				{
+					GRAD_Log.Debug(string.Format("Apply: '%1' already occupies its target slot %2 (prefab-baseline match) — skipping re-place", prefab, slotID));
+					spawnedOk = true;
+					return existing;
+				}
+			}
+
 			ok = manager.TrySpawnPrefabToStorage(prefab, storage, slotID);
 			if (!ok)
 				ok = manager.TrySpawnPrefabToStorage(prefab, storage, -1);
 		}
 
-		// No matched storage (or targeted spawn failed): engine-chosen placement.
+		// BUG FIX (2026-07-15, live-diagnosed — see the local branch's matching comment above for the
+		// full story): when there is NO matched storage (a plain EQUIP click with no captured slot
+		// address), the generic PURPOSE_ANY insert used to run BEFORE EquipAny. PURPOSE_ANY happily
+		// stuffs the item into any free slot anywhere and reports success, so EquipAny's REPLACE-worn-item
+		// behavior was never reached — live-confirmed as "headgear only swappable when uniform removed"
+		// (the item was landing in generic inventory space, not the headgear slot). FIX: try EquipAny
+		// FIRST whenever there's no matched storage, falling back to PURPOSE_ANY only if EquipAny itself
+		// can't place it.
+		string failTrailReplicated = "";
+		if (!ok && !storage)
+		{
+			IEntity spawnedItem = TryEquipReplace(manager, prefab, false, failTrailReplicated);
+			if (spawnedItem)
+			{
+				spawnedOk = true;
+				return spawnedItem;
+			}
+		}
+
+		// No matched storage (or targeted spawn failed) and EquipAny didn't take it either: engine-chosen
+		// placement.
 		if (!ok)
 		{
 			ok = manager.TrySpawnPrefabToStorage(prefab, null, -1, EStoragePurpose.PURPOSE_ANY);
 			storage = null; // read-back below must reflect the engine-chosen storage, which we don't know
+		}
+
+		// Last resort for the case a captured `storage` WAS matched but its targeted spawn failed (e.g.
+		// the slot is occupied by a different prefab) — retry via EquipAny here too, since the branch
+		// above only covers the no-matched-storage case.
+		if (!ok)
+		{
+			IEntity spawnedItem = TryEquipReplace(manager, prefab, false, failTrailReplicated);
+			if (spawnedItem)
+			{
+				spawnedOk = true;
+				return spawnedItem;
+			}
 		}
 
 		if (!ok)
@@ -267,35 +443,113 @@ class GRAD_LoadoutApply
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Place an already-spawned item onto the character using the type-aware equip path, falling
-	//! back to free container insertion. EquipAny resolves the correct loadout slot for clothing/gear
-	//! (headgear, vest, uniform, backpack) — slots that are LOCKED and which plain TryInsertItem
-	//! refuses. Items that belong in a container (magazines, grenades, medical) are not clothing, so
-	//! EquipAny returns false for them and we fall through to TryInsertItem(PURPOSE_ANY).
+	//! Last-resort placement for clothing/gear that is already WORN — a loadout slot occupied by a
+	//! DIFFERENT item (e.g. swapping the base BDU uniform for a pilot suit, or an already-worn backpack
+	//! for a different one). TrySpawnPrefabToStorage only INSERTS into a free slot; it never replaces
+	//! an occupied one, which is why "double-click to equip a uniform/headgear/backpack that's already
+	//! worn" failed 100% of the time in the 2026-07-14 live test (`engineChosen` in the failTrail).
 	//!
-	//! Requires the SCR_ subclass of the manager (where EquipAny / GetCharacterStorage live); if the
-	//! entity only has the base manager we can only do free insertion.
-	protected static bool TryEquipOrInsert(notnull InventoryStorageManagerComponent manager, notnull IEntity item)
+	//! ATTEMPT 1 (removed): spawn into WHATEVER free slot on WHATEVER storage would accept it, then
+	//! EquipAny to relocate. Live-diagnosed as broken FOR A DIFFERENT REASON than the original bug:
+	//! most storages on a character (weapon slots, ammo pouches) are type-restricted and reject an
+	//! arbitrary clothing prefab — "found 17 empty slots, none accepted this prefab" was a genuine
+	//! engine rejection (wrong item type for those slots), not a script bug. There is no generic
+	//! "holds anything" storage to use as a waypoint.
+	//!
+	//! CURRENT FIX: EquipAny's own real body (verified this session from arexplorer) explicitly
+	//! handles an item with NO parent slot at all: `if (!sourceSlot || !sourceSlot.GetStorage()) { ...
+	//! TryReplaceItem / TryInsertItemInStorage ... }`. So the item does not need a holding slot BEFORE
+	//! EquipAny — it can be a bare, freshly-spawned, un-inserted entity. The earlier "SpawnLocal then
+	//! hand to EquipAny cold" bug was specific to `GRAD_InventoryLib.SpawnLocal`
+	//! (`SpawnEntityPrefabLocal`) on the LOCAL/preview path never registering with the manager. Here we
+	//! use the manager-appropriate spawn for each context: `Game.SpawnEntityPrefab` (replicated,
+	//! authoritative) for the server/real-target path, `SpawnEntityPrefabLocal` for the local preview
+	//! path — and hand the result straight to EquipAny, since EquipAny's OWN documented handling
+	//! covers this "no parent slot yet" case rather than us working around it with a second insert
+	//! step.
+	protected static IEntity TryEquipReplace(notnull InventoryStorageManagerComponent manager, ResourceName prefab, bool localOnly, out string failTrail)
 	{
 		SCR_InventoryStorageManagerComponent scrManager = SCR_InventoryStorageManagerComponent.Cast(manager);
-		if (scrManager)
+		if (!scrManager)
 		{
-			// Weapons go through the weapon-equip path so they take the weapon slot (holstering the
-			// previous weapon) instead of EquipAny filling every weapon slot until full. Detect a
-			// weapon by its WeaponComponent on the spawned entity.
-			if (item.FindComponent(WeaponComponent))
-			{
-				if (scrManager.EquipWeapon(item))
-					return true;
-			}
-
-			SCR_CharacterInventoryStorageComponent charStorage = scrManager.GetCharacterStorage();
-			if (charStorage && scrManager.EquipAny(charStorage, item, -1))
-				return true;
+			failTrail += "noScrManager ";
+			return null;
 		}
 
-		// Not clothing/gear/weapon (or no character storage): free insertion into any suitable storage.
-		return manager.TryInsertItem(item, EStoragePurpose.PURPOSE_ANY);
+		SCR_CharacterInventoryStorageComponent charStorage = scrManager.GetCharacterStorage();
+		if (!charStorage)
+		{
+			failTrail += "noCharStorage ";
+			return null;
+		}
+
+		Resource resource = Resource.Load(prefab);
+		if (!resource || !resource.IsValid())
+		{
+			failTrail += "equipReplace[prefabLoadFailed] ";
+			return null;
+		}
+
+		BaseWorld world = GetGame().GetWorld();
+		if (!world)
+		{
+			failTrail += "equipReplace[noWorld] ";
+			return null;
+		}
+
+		EntitySpawnParams params = new EntitySpawnParams();
+		params.TransformMode = ETransformMode.WORLD;
+		Math3D.MatrixIdentity4(params.Transform);
+
+		IEntity spawned = null;
+		if (localOnly)
+			spawned = GetGame().SpawnEntityPrefabLocal(resource, world, params);
+		else
+			spawned = GetGame().SpawnEntityPrefab(resource, world, params);
+
+		if (!spawned)
+		{
+			failTrail += "equipReplace[spawnFailed] ";
+			return null;
+		}
+
+		if (scrManager.EquipAny(charStorage, spawned, -1))
+		{
+			// ROOT CAUSE FOUND (2026-07-16, live-diagnosed): EquipAny reports `true` even when the item
+			// never actually lands on the character. Confirmed via arexplorer's real EquipAny body: when
+			// the target slot already has an occupant, EquipAny takes its "performDropOfOriginalItem"
+			// branch, which creates a DropAndMoveOperationCallback and returns the result of
+			// TryRemoveItemFromStorage() on the OLD occupant immediately — the new item's own insertion
+			// (TryMoveItemToStorage) only happens later, from that callback's OnDropComplete(). On the
+			// local/non-replicated preview clone there is nothing driving that callback to completion, so
+			// `spawned` is dropped into limbo: EquipAny already returned true, but the entity never gets
+			// re-parented onto the character. Live-confirmed exactly this way for BDU Trousers re-equipped
+			// right after a one-piece coverall (Suit_Pilot/Suit_Tanker, which also occupies the LEGS slot)
+			// was removed from that same slot — GetParent() came back null and worldPos was still the
+			// spawn-origin identity transform from Math3D.MatrixIdentity4 above.
+			//
+			// FIX: don't trust EquipAny's return value alone — read back real state (this project's own
+			// hard rule; see the camera-position bug for the same lesson). If the entity isn't actually
+			// parented onto the character after EquipAny claims success, treat it as a failure: delete the
+			// orphan and let the caller fall through to its next fallback instead of silently losing the
+			// item.
+			IEntity spawnedParent = spawned.GetParent();
+			vector spawnedTransform[4];
+			spawned.GetWorldTransform(spawnedTransform);
+			GRAD_Log.Info(string.Format("TryEquipReplaceDiag: prefab='%1' parent=%2 parentName=%3 worldPos=%4",
+				prefab, spawnedParent != null, GRAD_InventoryLib.GetEntityShortName(spawnedParent), spawnedTransform[3].ToString()));
+
+			if (spawnedParent)
+				return spawned;
+
+			failTrail += "equipReplace[equipAnyOrphaned] ";
+			SCR_EntityHelper.DeleteEntityAndChildren(spawned);
+			return null;
+		}
+
+		failTrail += "equipReplace[equipAnyFailed] ";
+		SCR_EntityHelper.DeleteEntityAndChildren(spawned);
+		return null;
 	}
 
 	//------------------------------------------------------------------------------------------------

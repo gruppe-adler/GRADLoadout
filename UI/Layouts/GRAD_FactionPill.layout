@@ -1,0 +1,71 @@
+SizeLayoutWidgetClass {
+ Name "FactionPillSize"
+ AllowWidthOverride 1
+ WidthOverride 64
+ AllowHeightOverride 1
+ HeightOverride 64
+ MinDesiredWidth 64
+ MinDesiredHeight 64
+ {
+  ButtonWidgetClass "{D2A3B4C5D6E73001}" {
+   Name "FactionPillButton"
+   style blank
+   components {
+    SCR_InputButtonComponent "{D2A3B4C5D6E73002}" {
+     m_sActionName "MenuSelect"
+    }
+   }
+   Slot LayoutSlot "{D2A3B4C5D6E73003}" {
+    SizeMode Fill
+   }
+   {
+    OverlayWidgetClass "{D2A3B4C5D6E73004}" {
+     Name "FactionPillStack"
+     {
+      ImageWidgetClass "{D2A3B4C5D6E73005}" {
+       Name "FactionPillBg"
+       Slot OverlayWidgetSlot "{D2A3B4C5D6E73006}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+       }
+       Color 0.1 0.11 0.13 0.9
+      }
+      PanelWidgetClass "{D2A3B4C5D6E73007}" {
+       Name "FactionPillBorder"
+       Slot OverlayWidgetSlot "{D2A3B4C5D6E73008}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+        Padding -2 -2 -2 -2
+       }
+       Clipping False
+       Color 0.761 0.386 0.078 0
+       style outline_2px
+      }
+      SizeLayoutWidgetClass "{D2A3B4C5D6E73009}" {
+       Name "FactionPillIconSize"
+       Slot OverlayWidgetSlot "{D2A3B4C5D6E7300A}" {
+        HorizontalAlign 3
+        VerticalAlign 3
+        Padding 8 8 8 8
+       }
+       AllowWidthOverride 1
+       WidthOverride 48
+       AllowHeightOverride 1
+       HeightOverride 48
+       MinDesiredWidth 48
+       MinDesiredHeight 48
+       {
+        ImageWidgetClass "{D2A3B4C5D6E7300B}" {
+         Name "FactionPillIcon"
+         Slot LayoutSlot "{D2A3B4C5D6E7300C}" {
+          SizeMode Fill
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

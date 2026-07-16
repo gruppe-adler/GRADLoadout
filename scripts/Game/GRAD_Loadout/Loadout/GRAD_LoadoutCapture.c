@@ -45,8 +45,28 @@ class GRAD_LoadoutCapture
 		foreach (BaseInventoryStorageComponent storage : roots)
 			CaptureStorage(storage, data.m_Root, fullCapture, 0);
 
+		int nodeCount = data.m_Root.CountSubtree() - 1;
 		GRAD_Log.Info(string.Format("Capture: '%1' -> %2 nodes (full=%3)",
-			name, data.m_Root.CountSubtree() - 1, fullCapture));
+			name, nodeCount, fullCapture));
+
+		// DIAGNOSTIC: a zero-node capture from an entity that HAS top-level storages means every slot
+		// walked read as empty/invisible — seen live 2026-07-14 ("ArsenalResult -> 0 nodes" from a
+		// preview clone carrying 20+ items; suspected cause: entity was Deactivate()d at capture time).
+		// Dump what the walk actually saw so a recurrence is diagnosable from the log alone.
+		if (nodeCount == 0)
+		{
+			foreach (BaseInventoryStorageComponent root : roots)
+			{
+				int occupied = 0;
+				for (int i = 0; i < root.GetSlotsCount(); i++)
+				{
+					if (root.Get(i))
+						occupied++;
+				}
+				GRAD_Log.Warn(string.Format("Capture: '%1' empty result — root %2: %3 slots, %4 occupied",
+					name, root.Type().ToString(), root.GetSlotsCount(), occupied));
+			}
+		}
 
 		return data;
 	}

@@ -1,0 +1,73 @@
+ButtonWidgetClass {
+ Name "ListRowButton"
+ style blank
+ components {
+  SCR_InputButtonComponent "{E1F2A3B4C5D60001}" {
+   m_sActionName "MenuSelect"
+  }
+ }
+ {
+  OverlayWidgetClass "{E1F2A3B4C5D60002}" {
+   Name "ListRowStack"
+   {
+    ImageWidgetClass "{E1F2A3B4C5D60003}" {
+     Name "ListRowBg"
+     Slot OverlayWidgetSlot "{E1F2A3B4C5D60004}" {
+      HorizontalAlign 3
+      VerticalAlign 3
+     }
+     Color 0.1 0.11 0.13 0.9
+    }
+    HorizontalLayoutWidgetClass "{E1F2A3B4C5D60005}" {
+     Name "ListRowContent"
+     Slot OverlayWidgetSlot "{E1F2A3B4C5D60006}" {
+      HorizontalAlign 3
+      VerticalAlign 3
+     }
+     {
+      SizeLayoutWidgetClass "{E1F2A3B4C5D60007}" {
+       Name "ListRowIconSize"
+       Slot LayoutSlot "{E1F2A3B4C5D60008}" {
+        Padding 4 4 4 4
+       }
+       AllowWidthOverride 1
+       WidthOverride 64
+       AllowHeightOverride 1
+       HeightOverride 64
+       MinDesiredWidth 64
+       MinDesiredHeight 64
+       {
+        ItemPreviewWidgetClass "{E1F2A3B4C5D60009}" {
+         Name "ListRowIcon"
+         Slot LayoutSlot "{E1F2A3B4C5D6000A}" {
+          SizeMode Fill
+         }
+         Filter Bilinear
+         Format LDR
+        }
+       }
+      }
+      TextWidgetClass "{E1F2A3B4C5D6000B}" {
+       Name "ListRowName"
+       Slot LayoutSlot "{E1F2A3B4C5D6000C}" {
+        Padding 12 0 0 0
+        SizeMode Fill
+       }
+       Text ""
+       "Vertical Alignment" Center
+      }
+      TextWidgetClass "{E1F2A3B4C5D6000D}" {
+       Name "ListRowCount"
+       Slot LayoutSlot "{E1F2A3B4C5D6000E}" {
+        Padding 4 0 12 0
+       }
+       Text ""
+       "Vertical Alignment" Center
+       "Horizontal Alignment" Right
+      }
+     }
+    }
+   }
+  }
+ }
+}

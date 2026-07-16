@@ -35,6 +35,19 @@ FrameWidgetClass {
       Font "{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt"
      }
     }
+    ScrollLayoutWidgetClass "{D2A3B4C5D6E72001}" {
+     Name "FactionRowScroll"
+     Slot LayoutSlot "{D2A3B4C5D6E72002}" {
+      SizeMode Auto
+     }
+     {
+      HorizontalLayoutWidgetClass "{D2A3B4C5D6E72003}" {
+       Name "FactionRow"
+       Slot LayoutSlot "{D2A3B4C5D6E72004}" {
+       }
+      }
+     }
+    }
     HorizontalLayoutWidgetClass "{69D8AB9E032DEF35}" {
      Name "Content"
      Slot LayoutSlot "{69D8F07721AA8D53}" {
@@ -127,6 +140,47 @@ FrameWidgetClass {
           }
          }
         }
+        ScrollLayoutWidgetClass "{D2A3B4C5D6E71001}" {
+         Name "SubCategoryScroll"
+         Slot LayoutSlot "{D2A3B4C5D6E71002}" {
+          Padding 0 8 0 0
+          SizeMode Auto
+         }
+         {
+          HorizontalLayoutWidgetClass "{D2A3B4C5D6E71003}" {
+           Name "SubCategoryRow"
+           Slot LayoutSlot "{D2A3B4C5D6E71004}" {
+           }
+          }
+         }
+        }
+        HorizontalLayoutWidgetClass "{D2A3B4C5D6E75001}" {
+         Name "SearchRow"
+         Slot LayoutSlot "{D2A3B4C5D6E75002}" {
+          Padding 0 8 0 0
+          SizeMode Auto
+         }
+         {
+          EditBoxWidgetClass "{D2A3B4C5D6E75003}" {
+           Name "SearchBox"
+           Slot LayoutSlot "{D2A3B4C5D6E75004}" {
+            SizeMode Fill
+           }
+           Text ""
+          }
+          ButtonWidgetClass "{D2A3B4C5D6E75005}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+           Name "ButtonListView"
+           Slot LayoutSlot "{D2A3B4C5D6E75006}" {
+            Padding 8 0 0 0
+           }
+           components {
+            SCR_InputButtonComponent "{D2A3B4C5D6E75007}" {
+             m_sActionName "MenuSelect"
+            }
+           }
+          }
+         }
+        }
         ScrollLayoutWidgetClass "{69D8AB992B1E8B99}" {
          Name "CategoryItemsScroll"
          Slot LayoutSlot "{69D8AB992B1E8AB2}" {
@@ -136,6 +190,18 @@ FrameWidgetClass {
          {
           UniformGridLayoutWidgetClass "{69D8AB992B1E8B52}" {
            Name "CategoryItems"
+          }
+         }
+        }
+        ScrollLayoutWidgetClass "{D2A3B4C5D6E76001}" {
+         Name "CategoryListScroll"
+         Slot LayoutSlot "{D2A3B4C5D6E76002}" {
+          Padding 0 20 0 0
+          SizeMode Fill
+         }
+         {
+          VerticalLayoutWidgetClass "{D2A3B4C5D6E76003}" {
+           Name "CategoryList"
           }
          }
         }
@@ -229,6 +295,17 @@ FrameWidgetClass {
              Text "0%"
              "Horizontal Alignment" Right
             }
+            ButtonWidgetClass "{33333333CCCC0010}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+             Name "ButtonRemoveUniform"
+             Slot LayoutSlot "{33333333CCCC0011}" {
+              Padding 8 0 0 0
+             }
+             components {
+              SCR_InputButtonComponent "{33333333CCCC0012}" {
+               m_sActionName "MenuSelect"
+              }
+             }
+            }
            }
           }
           VerticalLayoutWidgetClass "{22222222BBBB0016}" {
@@ -263,6 +340,17 @@ FrameWidgetClass {
              }
              Text "0%"
              "Horizontal Alignment" Right
+            }
+            ButtonWidgetClass "{33333333CCCC0020}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+             Name "ButtonRemoveBackpack"
+             Slot LayoutSlot "{33333333CCCC0021}" {
+              Padding 8 0 0 0
+             }
+             components {
+              SCR_InputButtonComponent "{33333333CCCC0022}" {
+               m_sActionName "MenuSelect"
+              }
+             }
             }
            }
           }
@@ -299,11 +387,114 @@ FrameWidgetClass {
              Text "0%"
              "Horizontal Alignment" Right
             }
+            ButtonWidgetClass "{33333333CCCC0030}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+             Name "ButtonRemoveVest"
+             Slot LayoutSlot "{33333333CCCC0031}" {
+              Padding 8 0 0 0
+             }
+             components {
+              SCR_InputButtonComponent "{33333333CCCC0032}" {
+               m_sActionName "MenuSelect"
+              }
+             }
+            }
            }
           }
           VerticalLayoutWidgetClass "{22222222BBBB0026}" {
            Name "VestContents"
            Slot LayoutSlot "{22222222BBBB0027}" {
+           }
+          }
+          HorizontalLayoutWidgetClass "{69D8AB9AD1417440}" {
+           Name "TrousersHeader"
+           Slot LayoutSlot "{69D8AB9AD1417441}" {
+            Padding 0 12 0 2
+           }
+           {
+            ImageWidgetClass "{22222222BBBB0042}" {
+             Name "TrousersBar"
+             Slot LayoutSlot "{22222222BBBB0043}" {
+             }
+             Color 0.35 0.7 1 1
+            }
+            TextWidgetClass "{22222222BBBB0040}" {
+             Name "TrousersHeaderText"
+             Slot LayoutSlot "{22222222BBBB0041}" {
+              Padding 20 0 0 0
+             }
+             Text "TROUSERS"
+            }
+            TextWidgetClass "{22222222BBBB0044}" {
+             Name "TrousersPercent"
+             Slot LayoutSlot "{22222222BBBB0045}" {
+              Padding 20 0 0 0
+              SizeMode Fill
+             }
+             Text "0%"
+             "Horizontal Alignment" Right
+            }
+            ButtonWidgetClass "{33333333CCCC0040}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+             Name "ButtonRemoveTrousers"
+             Slot LayoutSlot "{33333333CCCC0041}" {
+              Padding 8 0 0 0
+             }
+             components {
+              SCR_InputButtonComponent "{33333333CCCC0042}" {
+               m_sActionName "MenuSelect"
+              }
+             }
+            }
+           }
+          }
+          VerticalLayoutWidgetClass "{22222222BBBB0046}" {
+           Name "TrousersContents"
+           Slot LayoutSlot "{22222222BBBB0047}" {
+           }
+          }
+          HorizontalLayoutWidgetClass "{69D8AB9AD1417450}" {
+           Name "HeadgearHeader"
+           Slot LayoutSlot "{69D8AB9AD1417451}" {
+            Padding 0 12 0 2
+           }
+           {
+            ImageWidgetClass "{22222222BBBB0052}" {
+             Name "HeadgearBar"
+             Slot LayoutSlot "{22222222BBBB0053}" {
+             }
+             Color 0.35 0.7 1 1
+            }
+            TextWidgetClass "{22222222BBBB0050}" {
+             Name "HeadgearHeaderText"
+             Slot LayoutSlot "{22222222BBBB0051}" {
+              Padding 20 0 0 0
+             }
+             Text "HEADGEAR"
+            }
+            TextWidgetClass "{22222222BBBB0054}" {
+             Name "HeadgearPercent"
+             Slot LayoutSlot "{22222222BBBB0055}" {
+              Padding 20 0 0 0
+              SizeMode Fill
+             }
+             Text "0%"
+             "Horizontal Alignment" Right
+            }
+            ButtonWidgetClass "{33333333CCCC0050}" : "{75C912A1C89BE6C3}UI/Layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout" {
+             Name "ButtonRemoveHeadgear"
+             Slot LayoutSlot "{33333333CCCC0051}" {
+              Padding 8 0 0 0
+             }
+             components {
+              SCR_InputButtonComponent "{33333333CCCC0052}" {
+               m_sActionName "MenuSelect"
+              }
+             }
+            }
+           }
+          }
+          VerticalLayoutWidgetClass "{22222222BBBB0056}" {
+           Name "HeadgearContents"
+           Slot LayoutSlot "{22222222BBBB0057}" {
            }
           }
          }
