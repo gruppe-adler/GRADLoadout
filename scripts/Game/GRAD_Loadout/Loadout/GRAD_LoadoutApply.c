@@ -227,7 +227,19 @@ class GRAD_LoadoutApply
 				// free slot for a SECOND copy of its own baked-in part, and EquipAny can't replace an item
 				// with an identical one either. Same root cause and same fix as the "already correctly
 				// equipped" short-circuit below for the captured-storage path: if the destination already
-				// directly holds this exact prefab, there is nothing to do — not a failure.
+				// directly holds this exact prefab AND has no room for another, there is nothing to do —
+				// not a failure.
+				//
+				// BUG FIX (2026-07-16, live-diagnosed): this guard originally fired on ANY prefab match in
+				// the preferred storage, with no regard for free space — which silently broke the arsenal's
+				// own [+] "add one more" button for every stackable already represented by at least one
+				// instance (ammo/meds/grenades into a vest/backpack): `Apply: spawned 1 items` kept logging
+				// (spawnedOk=true counts as spawned in the caller regardless of whether anything was
+				// created), but no new entity was ever inserted, so the loadout panel's count never
+				// increased. The ORIGINAL bug this guard fixed only exists when the destination has NO FREE
+				// SLOT for a second copy (a single baked-in cosmetic node) — a stackable item's preferred
+				// container almost always has room, so gate the short-circuit on that instead of a bare
+				// prefab match: skip only when a match exists AND the storage is genuinely full.
 				bool alreadyInPreferred = false;
 				int preferredSlots = preferredStorage.GetSlotsCount();
 				for (int pi = 0; pi < preferredSlots; pi++)
@@ -240,9 +252,9 @@ class GRAD_LoadoutApply
 					}
 				}
 
-				if (alreadyInPreferred)
+				if (alreadyInPreferred && !GRAD_InventoryLib.StorageHasFreeSlot(preferredStorage))
 				{
-					GRAD_Log.Debug(string.Format("Apply: '%1' already present in preferred storage %2 (prefab-baseline match) — skipping re-place", prefab, preferredStorage.Type().ToString()));
+					GRAD_Log.Debug(string.Format("Apply: '%1' already present in FULL preferred storage %2 (prefab-baseline match, no room for another) — skipping re-place", prefab, preferredStorage.Type().ToString()));
 					spawnedOk = true;
 					return null;
 				}
